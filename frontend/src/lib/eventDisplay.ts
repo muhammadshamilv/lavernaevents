@@ -25,6 +25,14 @@ export function formatEventTime(timeStr: string): string {
   return date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
+/** "7:00 PM" or, when an end time is given, "7:00 PM - 10:00 PM". */
+export function formatTimeRange(start: string, end?: string | null): string {
+  if (!start) return "";
+  if (!end) return formatEventTime(start);
+
+  return `${formatEventTime(start)} - ${formatEventTime(end)}`;
+}
+
 const STATUS_BADGE_CLASSES: Record<EventStatus, string> = {
   DRAFT: "bg-slate-100 text-slate-600",
   PUBLISHED: "bg-emerald-100 text-emerald-700",

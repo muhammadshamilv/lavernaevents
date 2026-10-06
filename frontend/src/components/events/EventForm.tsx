@@ -74,6 +74,7 @@ export default function EventForm({ existingEvent }: EventFormProps) {
           description: existingEvent.description,
           event_date: existingEvent.event_date,
           event_time: existingEvent.event_time.slice(0, 5),
+          event_end_time: existingEvent.event_end_time?.slice(0, 5) ?? "",
           venue_name: existingEvent.venue_name,
           address: existingEvent.address,
           google_maps_link: existingEvent.google_maps_link,
@@ -87,6 +88,7 @@ export default function EventForm({ existingEvent }: EventFormProps) {
           description: "",
           event_date: "",
           event_time: "",
+          event_end_time: "",
           venue_name: "",
           address: "",
           google_maps_link: "",
@@ -281,7 +283,7 @@ export default function EventForm({ existingEvent }: EventFormProps) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="event_time">Event time</Label>
+        <Label htmlFor="event_time">Start time</Label>
         <Input
           id="event_time"
           type="time"
@@ -289,6 +291,20 @@ export default function EventForm({ existingEvent }: EventFormProps) {
           {...register("event_time")}
         />
         <FormError message={errors.event_time?.message} />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="event_end_time">End time (optional)</Label>
+        <Input
+          id="event_end_time"
+          type="time"
+          hasError={!!errors.event_end_time}
+          {...register("event_end_time")}
+        />
+        <p className="text-xs text-slate-400">
+          Guests will see the time as a range, e.g. 7:00 PM - 10:00 PM.
+        </p>
+        <FormError message={errors.event_end_time?.message} />
       </div>
 
       <div className={twoCol ? "col-span-2 space-y-1.5" : "space-y-1.5"}>

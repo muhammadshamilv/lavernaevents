@@ -109,7 +109,39 @@ export interface EventStandardDefaults {
   venue_name: string;
   venue_address: string;
   host_name: string;
+  // Form-only values (Phase 27): the From / To clock times as HH:MM and
+  // the card style. Stored inside standard_values on the server.
+  time_from?: string;
+  time_to?: string;
+  text_color?: string;
+  font_style?: string;
 }
+
+/** Keys inside standard_values that style the card rather than fill text. */
+export const STYLE_VALUE_KEYS = ["text_color", "font_style", "time_from", "time_to"];
+
+export type CardFontStyle = "elegant" | "script" | "modern" | "playful";
+
+export const FONT_STYLE_OPTIONS: {
+  value: CardFontStyle;
+  label: string;
+  family: string;
+}[] = [
+  { value: "elegant", label: "Elegant", family: "'Playfair Display', serif" },
+  { value: "script", label: "Script", family: "'Great Vibes', cursive" },
+  { value: "modern", label: "Modern", family: "'Montserrat', sans-serif" },
+  { value: "playful", label: "Playful", family: "'Dancing Script', cursive" },
+];
+
+export const TEXT_COLOR_PRESETS: { value: string; label: string }[] = [
+  { value: "#FFFFFF", label: "White" },
+  { value: "#2B2B2B", label: "Charcoal" },
+  { value: "#1D3557", label: "Navy" },
+  { value: "#7A1F3D", label: "Burgundy" },
+  { value: "#B8860B", label: "Gold" },
+  { value: "#0F5132", label: "Emerald" },
+  { value: "#C2185B", label: "Rose" },
+];
 
 export interface FillActiveTemplatePayload {
   template_id: number;

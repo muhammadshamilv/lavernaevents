@@ -2,13 +2,14 @@ import base64
 import io
 import re
 import secrets
+from datetime import datetime
 from pathlib import Path
 
 from django.core.files.base import ContentFile
 from django.db import IntegrityError
 from memberships.services import add_template_to_library
 from memberships.utils import LimitExceededError, check_template_limit
-from PIL import Image, ImageDraw, ImageFont, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
 from .models import ActiveFilledTemplate, Invitation, InvitationTemplate
 
@@ -28,6 +29,67 @@ def generate_response_token() -> str:
     return secrets.token_urlsafe(24)
 
 
+# ---------------------------------------------------------------------------
+# Event time helpers (start - end range)
+# ---------------------------------------------------------------------------
+
+def _clock_text(value) -> str:
+    """7:00 PM style text (no leading zero) for a time object."""
+
+    return value.strftime("%I:%M %p").lstrip("0")
+
+
+def format_time_range(start, end=None) -> str:
+    """"7:00 PM" or, when an end time is known, "7:00 PM - 10:00 PM"."""
+
+    if start is None:
+        return ""
+
+    if end is None:
+        return _clock_text(start)
+
+    return f"{_clock_text(start)} - {_clock_text(end)}"
+
+
+def format_event_time(event) -> str:
+    """The event's time as the guest should read it (range if it has an end)."""
+
+    return format_time_range(event.event_time, getattr(event, "event_end_time", None))
+
+
+def parse_clock_input(value):
+    """Parse "HH:MM" (what <input type=time> sends) into a time, or None."""
+
+    if not value:
+        return None
+
+    for pattern in ("%H:%M", "%H:%M:%S", "%I:%M %p"):
+        try:
+            return datetime.strptime(str(value).strip(), pattern).time()
+        except ValueError:
+            continue
+
+    return None
+
+
+# Style choices the organizer makes on the fill form. They are stored
+# inside ActiveFilledTemplate.standard_values (a JSON column), so no
+# database change is needed for them.
+STYLE_KEYS = ("text_color", "font_style", "time_from", "time_to")
+
+FONT_STYLES = {
+    # key: (title font file, title weight, body font file, body weight)
+    "elegant": ("PlayfairDisplay.ttf", 700, "PlayfairDisplay.ttf", 400),
+    "script": ("GreatVibes-Regular.ttf", None, "Montserrat.ttf", 400),
+    "modern": ("Montserrat.ttf", 700, "Montserrat.ttf", 400),
+    "playful": ("DancingScript.ttf", 700, "Montserrat.ttf", 400),
+}
+
+DEFAULT_FONT_STYLE = "elegant"
+
+_HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
 def build_placeholder_context(event, guest) -> dict:
     """Build the fixed standard placeholder dict for a given event+guest.
 
@@ -36,17 +98,29 @@ def build_placeholder_context(event, guest) -> dict:
     filling a template on the Templates page - the fill-in form
     pre-populates from this, but the organizer can then override any
     value before confirming (see fill_active_template).
+
+    When guest is None (the fill form's defaults) a few form-only keys
+    are added too: the raw From / To times and the style defaults.
     """
 
-    return {
+    context = {
         "guest_name": guest.name if guest is not None else "{guest_name}",
         "event_name": event.name,
         "event_date": event.event_date.strftime("%d %B %Y"),
-        "event_time": event.event_time.strftime("%I:%M %p"),
+        "event_time": format_event_time(event),
         "venue_name": event.venue_name or "the venue",
         "venue_address": event.address or "",
         "host_name": event.host_name or event.organizer.full_name,
     }
+
+    if guest is None:
+        end = getattr(event, "event_end_time", None)
+        context["time_from"] = event.event_time.strftime("%H:%M")
+        context["time_to"] = end.strftime("%H:%M") if end else ""
+        context["text_color"] = ""
+        context["font_style"] = DEFAULT_FONT_STYLE
+
+    return context
 
 
 def render_template_text(template: InvitationTemplate, event, guest) -> str:
@@ -103,38 +177,68 @@ class _SafeDict(dict):
 # have no system fonts installed.
 _FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
-_BOLD_FONT_CANDIDATES = [
+_FALLBACK_BOLD = [
     str(_FONT_DIR / "DejaVuSans-Bold.ttf"),
     "DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "arialbd.ttf",
-    "Arial Bold.ttf",
 ]
 
-_REGULAR_FONT_CANDIDATES = [
+_FALLBACK_REGULAR = [
     str(_FONT_DIR / "DejaVuSans.ttf"),
     "DejaVuSans.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "arial.ttf",
-    "Arial.ttf",
 ]
 
 
-def _load_font(bold: bool, size: int):
-    """Load a TrueType font at `size`, falling back to Pillow's default."""
+def _load_font(file_name: str | None, weight: int | None, size: int, bold_fallback: bool = False):
+    """Load a bundled TrueType font (setting its weight if it is a
+    variable font), falling back to DejaVu and then Pillow's default."""
 
-    candidates = _BOLD_FONT_CANDIDATES if bold else _REGULAR_FONT_CANDIDATES
+    candidates = []
+
+    if file_name:
+        candidates.append(str(_FONT_DIR / file_name))
+
+    candidates += _FALLBACK_BOLD if bold_fallback else _FALLBACK_REGULAR
 
     for name in candidates:
         try:
-            return ImageFont.truetype(name, size)
+            font = ImageFont.truetype(name, size)
         except OSError:
             continue
+
+        if weight is not None:
+            try:
+                font.set_variation_by_axes([weight])
+            except Exception:
+                pass
+
+        return font
 
     try:
         return ImageFont.load_default(size=size)
     except TypeError:
         return ImageFont.load_default()
+
+
+def _font_set(style: str, width: int) -> dict:
+    """The title / body / label fonts for one font style, sized to the image."""
+
+    title_file, title_weight, body_file, body_weight = FONT_STYLES.get(
+        style, FONT_STYLES[DEFAULT_FONT_STYLE]
+    )
+
+    # Script faces look small at the same point size.
+    title_scale = 1.35 if style == "script" else 1.15 if style == "playful" else 1.0
+
+    return {
+        "title": _load_font(title_file, title_weight, max(22, int(width * 0.068 * title_scale)), True),
+        "name": _load_font(body_file, 600 if body_weight else None, max(16, int(width * 0.040)), True),
+        "body": _load_font(body_file, body_weight, max(14, int(width * 0.034))),
+        "label": _load_font("Montserrat.ttf", 600, max(10, int(width * 0.022)), True),
+    }
 
 
 def _wrap_text(draw, text: str, font, max_width: int) -> list[str]:
@@ -165,9 +269,18 @@ def _wrap_text(draw, text: str, font, max_width: int) -> list[str]:
     return lines
 
 
-def _line_height(draw, font) -> int:
+def _line_height(draw, font, factor: float = 1.4) -> int:
     bbox = draw.textbbox((0, 0), "Ag", font=font)
-    return max(1, int((bbox[3] - bbox[1]) * 1.45))
+    return max(1, int((bbox[3] - bbox[1]) * factor))
+
+
+def _spaced_width(draw, text: str, font, spacing: float) -> float:
+    return sum(draw.textlength(ch, font=font) + spacing for ch in text) - spacing
+
+
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    value = value.lstrip("#")
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
 
 def _open_background(template: InvitationTemplate) -> Image.Image:
@@ -183,6 +296,22 @@ def _open_background(template: InvitationTemplate) -> Image.Image:
     return Image.open(io.BytesIO(data)).convert("RGB")
 
 
+def _pick_text_color(background: Image.Image, chosen: str | None) -> tuple[int, int, int]:
+    """The organizer's chosen font colour, or a dark/light colour picked
+    from how bright the middle of the background is."""
+
+    if chosen and _HEX_COLOR.match(chosen):
+        return _hex_to_rgb(chosen)
+
+    width, height = background.size
+    middle = background.crop(
+        (int(width * 0.18), int(height * 0.30), int(width * 0.82), int(height * 0.75))
+    ).convert("L")
+    brightness = ImageStat.Stat(middle).mean[0]
+
+    return (43, 43, 43) if brightness >= 130 else (255, 255, 255)
+
+
 def _compose_invitation_image(
     template: InvitationTemplate,
     context: dict,
@@ -191,11 +320,12 @@ def _compose_invitation_image(
 ) -> ContentFile:
     """Draw the invitation's text onto the template's background image.
 
-    If the template has body_text, that (with placeholders filled) is
-    drawn. Otherwise a default block is drawn: event name, "Dear <guest>",
-    date, time, venue and the template's custom fields. The block is
-    centered, wrapped to the image width, and drawn dark or light
-    depending on how bright the middle of the background is.
+    The organizer's font colour and font style (context["text_color"],
+    context["font_style"]) are honoured. Without body_text a designed
+    default layout is drawn: "YOU ARE INVITED", guest name, big event
+    title, a divider and then Date / Time / Venue blocks (plus the
+    template's custom fields). With body_text, that text (placeholders
+    filled) is drawn instead, in the chosen font and colour.
     """
 
     background = _open_background(template)
@@ -210,58 +340,140 @@ def _compose_invitation_image(
     width, height = background.size
     draw = ImageDraw.Draw(background)
 
-    title_font = _load_font(bold=True, size=max(18, int(width * 0.052)))
-    body_font = _load_font(bold=False, size=max(14, int(width * 0.034)))
-    max_text_width = int(width * 0.62)
+    style = context.get("font_style") or DEFAULT_FONT_STYLE
+    fonts = _font_set(style, width)
+    max_text_width = int(width * 0.70)
+    color = _pick_text_color(background, context.get("text_color"))
+    soft = color
 
-    middle = background.crop(
-        (int(width * 0.18), int(height * 0.30), int(width * 0.82), int(height * 0.75))
-    ).convert("L")
-    brightness = ImageStat.Stat(middle).mean[0]
-    text_color = "#2B2B2B" if brightness >= 130 else "#FFFFFF"
+    # rows: (kind, text, font, space_after)
+    rows: list[tuple[str, str, object, int]] = []
 
-    rows: list[tuple[str, object]] = []
+    body_lh = _line_height(draw, fonts["body"])
 
     if template.body_text:
         rendered = template.body_text.format_map(_SafeDict(context))
 
-        for line in _wrap_text(draw, rendered, body_font, max_text_width):
-            rows.append((line, body_font))
+        for line in _wrap_text(draw, rendered, fonts["body"], max_text_width):
+            rows.append(("text", line, fonts["body"], 0 if line else int(body_lh * 0.4)))
 
     else:
-        for line in _wrap_text(draw, str(context.get("event_name", "")), title_font, max_text_width):
-            rows.append((line, title_font))
+        rows.append(("label", "YOU ARE INVITED", fonts["label"], int(height * 0.022)))
 
-        rows.append(("", body_font))
-        rows.append((f"Dear {context.get('guest_name', '')},", body_font))
-        rows.append(("", body_font))
-        rows.append((f"Date: {context.get('event_date', '')}", body_font))
-        rows.append((f"Time: {context.get('event_time', '')}", body_font))
+        guest_name = str(context.get("guest_name", "")).strip()
 
-        for line in _wrap_text(draw, f"Venue: {context.get('venue_name', '')}", body_font, max_text_width):
-            rows.append((line, body_font))
+        if guest_name:
+            rows.append(("text", f"Dear {guest_name},", fonts["name"], int(height * 0.018)))
 
-        for label, value in custom_pairs:
-            for line in _wrap_text(draw, f"{label}: {value}", body_font, max_text_width):
-                rows.append((line, body_font))
+        title = str(context.get("event_name", ""))
+        title_font = fonts["title"]
 
-    heights = [
-        _line_height(draw, font) if text else int(_line_height(draw, font) * 0.6)
-        for text, font in rows
-    ]
+        lines = _wrap_text(draw, title, title_font, max_text_width)
 
+        # Long names: shrink the title until it fits in 3 lines.
+        size = title_font.size if hasattr(title_font, "size") else 40
+
+        while len(lines) > 3 and size > 18:
+            size = int(size * 0.88)
+            title_file, title_weight, _bf, _bw = FONT_STYLES.get(style, FONT_STYLES[DEFAULT_FONT_STYLE])
+            title_font = _load_font(title_file, title_weight, size, True)
+            lines = _wrap_text(draw, title, title_font, max_text_width)
+
+        for index, line in enumerate(lines):
+            rows.append(("title", line, title_font, int(height * 0.012) if index == len(lines) - 1 else 0))
+
+        rows.append(("divider", "", fonts["body"], int(height * 0.022)))
+
+        detail_blocks = [
+            ("DATE", str(context.get("event_date", ""))),
+            ("TIME", str(context.get("event_time", ""))),
+            ("VENUE", str(context.get("venue_name", ""))),
+        ]
+
+        detail_blocks += [(label.upper(), value) for label, value in custom_pairs if value]
+
+        for label, value in detail_blocks:
+            if not value:
+                continue
+
+            rows.append(("label", label, fonts["label"], int(height * 0.004)))
+
+            value_lines = _wrap_text(draw, value, fonts["name"], max_text_width)
+
+            for index, line in enumerate(value_lines):
+                rows.append(("text", line, fonts["name"], int(height * 0.016) if index == len(value_lines) - 1 else 0))
+
+    def row_height(kind, text, font, after):
+        if kind == "divider":
+            return int(height * 0.012) + after
+
+        if not text:
+            return after
+
+        factor = 1.25 if kind in ("title", "label") else 1.4
+        return _line_height(draw, font, factor) + after
+
+    heights = [row_height(*row) for row in rows]
     total_height = sum(heights)
-    y = max(int(height * 0.20), int((height - total_height) / 2))
+    y = max(int(height * 0.16), int((height - total_height) / 2))
 
-    for (text, font), line_h in zip(rows, heights):
-        if text:
-            text_width = draw.textlength(text, font=font)
-            draw.text(((width - text_width) / 2, y), text, fill=text_color, font=font)
+    # Soft shadow layer so text stays readable on busy backgrounds.
+    shadow_layer = Image.new("RGBA", background.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow_layer)
+    shadow_color = (0, 0, 0, 90) if sum(color) > 380 else (255, 255, 255, 110)
 
-        y += line_h
+    placements = []
+
+    for (kind, text, font, after), row_h in zip(rows, heights):
+        if kind == "divider":
+            line_y = y + int(height * 0.006)
+            half = int(width * 0.09)
+            placements.append(("divider", (width // 2 - half, line_y, width // 2 + half, line_y)))
+        elif text:
+            if kind == "label":
+                spacing = max(1.5, font.size * 0.18) if hasattr(font, "size") else 2
+                text_width = _spaced_width(draw, text, font, spacing)
+                placements.append(("label", ((width - text_width) / 2, y, text, font, spacing)))
+            else:
+                text_width = draw.textlength(text, font=font)
+                placements.append(("text", ((width - text_width) / 2, y, text, font, kind)))
+
+        y += row_h
+
+    offset = max(1, int(width * 0.0016))
+
+    for placement in placements:
+        if placement[0] == "divider":
+            shadow_draw.line(placement[1], fill=shadow_color, width=max(2, int(width * 0.003)))
+        elif placement[0] == "label":
+            x, ty, text, font, spacing = placement[1]
+            cx = x
+            for ch in text:
+                shadow_draw.text((cx + offset, ty + offset), ch, font=font, fill=shadow_color)
+                cx += draw.textlength(ch, font=font) + spacing
+        else:
+            x, ty, text, font, _kind = placement[1]
+            shadow_draw.text((x + offset, ty + offset), text, font=font, fill=shadow_color)
+
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(max(1, int(width * 0.002))))
+    background = Image.alpha_composite(background.convert("RGBA"), shadow_layer).convert("RGB")
+    draw = ImageDraw.Draw(background)
+
+    for placement in placements:
+        if placement[0] == "divider":
+            draw.line(placement[1], fill=color, width=max(2, int(width * 0.003)))
+        elif placement[0] == "label":
+            x, ty, text, font, spacing = placement[1]
+            cx = x
+            for ch in text:
+                draw.text((cx, ty), ch, font=font, fill=soft)
+                cx += draw.textlength(ch, font=font) + spacing
+        else:
+            x, ty, text, font, kind = placement[1]
+            draw.text((x, ty), text, font=font, fill=color)
 
     buffer = io.BytesIO()
-    background.save(buffer, format="JPEG", quality=90)
+    background.save(buffer, format="JPEG", quality=92)
     buffer.seek(0)
 
     return ContentFile(buffer.read())
@@ -471,6 +683,31 @@ def _extract_used_placeholders(body_text: str) -> set[str]:
     return set(re.findall(r"\{(\w+)\}", body_text))
 
 
+def _clean_style_values(values: dict) -> dict:
+    """Validate the style / time keys the fill form sends and, when a
+    From time is given, build the guest-facing event_time text from the
+    From - To range."""
+
+    cleaned = dict(values)
+
+    colour = str(cleaned.get("text_color", "") or "").strip()
+    cleaned["text_color"] = colour if _HEX_COLOR.match(colour) else ""
+
+    if cleaned.get("font_style") not in FONT_STYLES:
+        cleaned["font_style"] = DEFAULT_FONT_STYLE
+
+    start = parse_clock_input(cleaned.get("time_from"))
+    end = parse_clock_input(cleaned.get("time_to"))
+
+    cleaned["time_from"] = start.strftime("%H:%M") if start else ""
+    cleaned["time_to"] = end.strftime("%H:%M") if (start and end) else ""
+
+    if start:
+        cleaned["event_time"] = format_time_range(start, end)
+
+    return cleaned
+
+
 def fill_active_template(organizer, template_id: int, event_id: int, standard_values: dict, custom_values: dict) -> ActiveFilledTemplate:
     """Select a template, tie it to an event, and confirm its filled-in
     content as the organizer's ONE active filled template.
@@ -531,8 +768,11 @@ def fill_active_template(organizer, template_id: int, event_id: int, standard_va
         )
 
     defaults = build_placeholder_context(event, guest=None)
-    merged_standard = {**defaults, **{k: v for k, v in standard_values.items() if k in InvitationTemplate.PLACEHOLDER_FIELDS}}
+    allowed_standard = set(InvitationTemplate.PLACEHOLDER_FIELDS) | set(STYLE_KEYS)
+    merged_standard = {**defaults, **{k: v for k, v in standard_values.items() if k in allowed_standard}}
     merged_standard.pop("guest_name", None)
+
+    merged_standard = _clean_style_values(merged_standard)
 
     full_context = {**merged_standard, **{k: custom_values[k] for k in required_custom_keys}}
     full_context["guest_name"] = "{guest_name}"

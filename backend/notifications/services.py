@@ -10,6 +10,7 @@ from guests.models import Guest
 from invitations.models import ActiveFilledTemplate, Invitation, InvitationSend
 from invitations.services import (
     InvitationError,
+    format_event_time,
     generate_response_token,
     get_active_filled_template,
     render_active_template_for_guest,
@@ -67,7 +68,8 @@ def build_response_link(response_token: str) -> str:
 
 
 def build_calendar_link(invitation: Invitation) -> str:
-    """Build the guest-facing .ics download link for "Add to Calendar"."""
+    """Build the guest-facing .ics download link (kept for compatibility;
+    the invitation page now carries its own Add to Calendar buttons)."""
 
     public_backend_url = config(
         "PUBLIC_BACKEND_URL",
@@ -107,11 +109,15 @@ def build_invitation_image_link(invitation: Invitation) -> str:
 
 
 def build_invitation_text(invitation: Invitation, response_link: str, channel: str = "") -> str:
-    """Build the plain-text invitation message for Email / WhatsApp."""
+    """Build the plain-text invitation message for Email / WhatsApp.
+
+    The guest gets ONE link, "View your invitation". That page holds the
+    invitation card, the Yes / Maybe / No attendance buttons, the
+    location and the Add to Calendar buttons.
+    """
 
     event = invitation.event
     guest = invitation.guest
-    calendar_link = build_calendar_link(invitation)
 
     if invitation.rendered_text:
         body = invitation.rendered_text
@@ -120,32 +126,20 @@ def build_invitation_text(invitation: Invitation, response_link: str, channel: s
             f"Hello {guest.name},\n\n"
             f"You are invited to {event.name}!\n\n"
             f"Date: {event.event_date.strftime('%d %B %Y')}\n"
-            f"Time: {event.event_time.strftime('%I:%M %p')}\n"
+            f"Time: {format_event_time(event)}\n"
             f"Venue: {event.venue_name}"
-            + (f"\nLocation: {event.google_maps_link}" if event.google_maps_link else "")
         )
 
-    parts = [body]
-
-    if channel != NotificationLog.Channel.EMAIL:
-        image_link = build_invitation_image_link(invitation)
-
-        if image_link:
-            parts.append(f"View your invitation card:\n{image_link}")
-
-    parts.append(f"Please confirm your attendance here:\n{response_link}")
-    parts.append(f"Add this event to your calendar:\n{calendar_link}")
-
-    return "\n\n".join(parts)
+    return f"{body}\n\nView your invitation:\n{response_link}"
 
 
 def build_sms_text(invitation: Invitation, response_link: str) -> str:
-    """Short SMS body that always keeps the RSVP link intact."""
+    """Short SMS body that always keeps the invitation link intact."""
 
     event = invitation.event
     guest = invitation.guest
 
-    suffix = f" RSVP: {response_link}"
+    suffix = f" View your invitation: {response_link}"
     prefix = (
         f"Hi {guest.name}, you're invited to {event.name} "
         f"on {event.event_date.strftime('%d %b %Y')}."
@@ -160,20 +154,47 @@ def build_sms_text(invitation: Invitation, response_link: str) -> str:
 
 
 def build_voice_message(invitation: Invitation) -> str:
-    """Build the plain-text message to be READ ALOUD during a voice call."""
+    """Build the message READ ALOUD during a voice call.
 
-    if invitation.rendered_text:
-        return invitation.rendered_text
+    Always a short, clean spoken script (it never reads the written
+    invitation text out): the guest's name first, then the invitation and
+    the event details, repeated once so the guest can catch them.
+    """
 
     event = invitation.event
+    guest = invitation.guest
+
+    when = event.event_date.strftime("%A, %d %B %Y")
+
+    if getattr(event, "event_end_time", None):
+        at = (
+            f"from {_spoken_time(event.event_time)} "
+            f"to {_spoken_time(event.event_end_time)}"
+        )
+    else:
+        at = f"at {_spoken_time(event.event_time)}"
+
+    venue = f", at {event.venue_name}" if event.venue_name else ""
+
+    host = event.host_name or getattr(event.organizer, "full_name", "") or ""
+    from_host = f" from {host}" if host else ""
+
+    details = f"{event.name}, on {when}, {at}{venue}"
 
     return (
-        f"Hello {invitation.guest.name}. You are invited to {event.name}, "
-        f"on {event.event_date.strftime('%d %B %Y')}, "
-        f"at {event.event_time.strftime('%I:%M %p')}, "
-        f"at {event.venue_name or 'the venue'}. "
-        f"Please check your messages for full details. Thank you."
+        f"Hello {guest.name}. You are warmly invited{from_host} to {details}. "
+        f"Once again, {details}. "
+        f"We have also sent you the invitation card. Please check your messages "
+        f"to confirm your attendance. We look forward to seeing you. Thank you."
     )
+
+
+def _spoken_time(value) -> str:
+    """"7:30 PM" read naturally: "7 PM" on the hour."""
+
+    text = value.strftime("%I:%M %p").lstrip("0")
+
+    return text.replace(":00", "")
 
 
 def build_wa_link(invitation, message: str) -> str:

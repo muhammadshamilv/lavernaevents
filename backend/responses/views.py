@@ -5,7 +5,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .calendar import build_event_ics
+from django.utils.html import strip_tags
+
+from .calendar import (
+    build_event_ics,
+    build_google_calendar_url,
+    resolve_schedule,
+)
 from .serializers import InvitationPublicSerializer, SubmitResponseSerializer
 from .services import ResponseError, get_invitation_by_token, submit_guest_response
 
@@ -49,28 +55,47 @@ class InvitationResponsePageView(APIView):
 
         event = invitation.event
         guest = invitation.guest
+        schedule = resolve_schedule(invitation)
+
+        if event.event_type == event.EventType.CUSTOM and event.custom_event_type_label:
+            event_type_label = event.custom_event_type_label
+        else:
+            event_type_label = event.get_event_type_display()
 
         data = {
             "guest_name": guest.name,
             "event_name": event.name,
             "event_type": event.event_type,
+            "event_type_label": event_type_label,
+            "host_name": event.host_name or getattr(event.organizer, "full_name", "") or "",
+            "description": strip_tags(event.description or ""),
             "event_date": event.event_date,
-            "event_time": event.event_time,
+            "event_time": schedule["start_time"],
+            "event_end_time": schedule["end_time"],
+            "time_text": schedule["time_text"],
             "venue_name": event.venue_name,
             "address": event.address,
             "google_maps_link": event.google_maps_link,
+            "cover_image": (
+                request.build_absolute_uri(event.cover_image.url)
+                if event.cover_image
+                else None
+            ),
             "invitation_image": (
                 request.build_absolute_uri(invitation.image_file.url)
                 if invitation.image_file
                 else None
             ),
+            "accent_color": schedule["accent_color"],
             "response_status": guest.response_status,
             "already_responded": guest.response_status != Guest.ResponseStatus.PENDING,
-            # Phase 23: a ready-made link to the .ics download below, so
-            # the frontend just renders an <a href> rather than
-            # reconstructing this URL itself.
+            # .ics for Apple / Outlook (opens the "Add to Calendar" sheet).
             "calendar_url": request.build_absolute_uri(
                 f"/api/respond/{response_token}/calendar/"
+            ),
+            # Google Calendar opens with everything filled in - one tap.
+            "google_calendar_url": build_google_calendar_url(
+                event, schedule["start_dt"], schedule["end_dt"]
             ),
         }
 
@@ -163,12 +188,23 @@ class InvitationCalendarView(APIView):
                 status=response_status,
             )
 
-        ics_bytes = build_event_ics(invitation.event, invitation.guest)
+        schedule = resolve_schedule(invitation)
+
+        ics_bytes = build_event_ics(
+            invitation.event,
+            invitation.guest,
+            start_dt=schedule["start_dt"],
+            end_dt=schedule["end_dt"],
+        )
 
         response = HttpResponse(ics_bytes, content_type="text/calendar; charset=utf-8")
         safe_name = "".join(
             ch for ch in invitation.event.name if ch.isalnum() or ch in (" ", "-", "_")
         ).strip() or "event"
-        response["Content-Disposition"] = f'attachment; filename="{safe_name}.ics"'
+
+        # "inline" lets phones open the native "Add to Calendar" sheet
+        # straight away; ?download=1 forces a file download instead.
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        response["Content-Disposition"] = f'{disposition}; filename="{safe_name}.ics"'
 
         return response

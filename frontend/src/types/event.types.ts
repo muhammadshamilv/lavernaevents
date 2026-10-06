@@ -49,6 +49,7 @@ export interface Event {
   description: string;
   event_date: string;
   event_time: string;
+  event_end_time: string | null;
   venue_name: string;
   address: string;
   google_maps_link: string;
@@ -65,6 +66,7 @@ export interface EventListItem {
   event_type: EventType;
   event_date: string;
   event_time: string;
+  event_end_time: string | null;
   venue_name: string;
   status: EventStatus;
   cover_image: string | null;
@@ -78,6 +80,7 @@ export interface CreateEventPayload {
   description?: string;
   event_date: string;
   event_time: string;
+  event_end_time?: string;
   venue_name?: string;
   address?: string;
   google_maps_link?: string;

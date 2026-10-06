@@ -53,6 +53,8 @@ const eventShape = {
   description: z.string().trim().optional(),
   event_date: baseEventDate,
   event_time: z.string().min(1, "Event time is required."),
+  // Optional. Guests then see a From - To range instead of one time.
+  event_end_time: z.string().optional(),
   venue_name: z.string().trim().optional(),
   address: z.string().trim().optional(),
   google_maps_link: z

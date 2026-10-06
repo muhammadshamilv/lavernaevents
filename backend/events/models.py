@@ -62,6 +62,12 @@ class Event(TimeStampedModel):
 
     event_time = models.TimeField()
 
+    event_end_time = models.TimeField(
+        null=True,
+        blank=True,
+        help_text="Optional. Shown to guests as a From - To time range.",
+    )
+
     venue_name = models.CharField(
         max_length=200,
         blank=True,

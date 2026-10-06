@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Check, ImageIcon, LayoutTemplate, Pencil, Plus, Sparkles, X } from "lucide-react";
+import { Check, Clock, ImageIcon, LayoutTemplate, Palette, Pencil, Plus, Sparkles, Type, X } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -19,7 +19,14 @@ import { useEvents } from "@/queries/useEventQueries";
 import { resolveMediaUrl } from "@/lib/media";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
-import { STANDARD_FIELD_LABELS } from "@/types/invitation.types";
+import { useInvitationFonts } from "@/lib/invitationFonts";
+import { formatTimeRange } from "@/lib/eventDisplay";
+import {
+  FONT_STYLE_OPTIONS,
+  STANDARD_FIELD_LABELS,
+  STYLE_VALUE_KEYS,
+  TEXT_COLOR_PRESETS,
+} from "@/types/invitation.types";
 import type {
   ActiveFilledTemplate,
   ActiveTemplatePreview,
@@ -291,9 +298,11 @@ function ActiveTemplatePanel({
     template?.custom_fields.find((field) => field.field_key === key)?.label ?? prettifyKey(key);
 
   const detailRows: Array<[string, string]> = [
-    ...Object.entries(active.standard_values).map(
-      ([key, value]) => [STANDARD_FIELD_LABELS[key] ?? prettifyKey(key), value] as [string, string]
-    ),
+    ...Object.entries(active.standard_values)
+      .filter(([key]) => !STYLE_VALUE_KEYS.includes(key))
+      .map(
+        ([key, value]) => [STANDARD_FIELD_LABELS[key] ?? prettifyKey(key), value] as [string, string]
+      ),
     ...Object.entries(active.custom_values).map(
       ([key, value]) => [labelForCustom(key), value] as [string, string]
     ),
@@ -377,6 +386,8 @@ function FillTemplateDialog({
   initial?: ActiveFilledTemplate;
   onClose: () => void;
 }) {
+  useInvitationFonts();
+
   const { data: eventsPage, isLoading: eventsLoading } = useEvents(1);
 
   // Editing an existing fill skips straight to the form with its values.
@@ -396,12 +407,28 @@ function FillTemplateDialog({
 
   const events = eventsPage?.events ?? [];
 
+  const setStandard = (key: string, value: string) =>
+    setStandardValues((values) => ({ ...values, [key]: value }));
+
+  const fontStyle = standardValues.font_style || "elegant";
+  const textColor = standardValues.text_color ?? "";
+
+  // "7:00 PM - 10:00 PM" built from the From / To inputs, falling back to
+  // the plain event time text.
+  const timeText = standardValues.time_from
+    ? formatTimeRange(standardValues.time_from, standardValues.time_to || null)
+    : standardValues.event_time ?? "";
+
   // Event defaults pre-fill a fresh form. They must NOT overwrite the
   // organizer's saved values while they are editing an existing fill.
   useEffect(() => {
     if (!defaults) return;
     if (initial && eventId === initial.event) return;
-    setStandardValues({ ...defaults });
+    setStandardValues(
+      Object.fromEntries(
+        Object.entries(defaults).filter(([, value]) => value !== undefined)
+      ) as Record<string, string>
+    );
   }, [defaults, eventId, initial]);
 
   const handlePickEvent = (id: number) => {
@@ -447,7 +474,10 @@ function FillTemplateDialog({
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.15 }}
-        className="premium-card relative max-h-[90vh] w-full max-w-lg overflow-y-auto p-6 sm:p-8"
+        className={cn(
+          "premium-card relative max-h-[92vh] w-full overflow-y-auto p-5 sm:p-8",
+          !confirmed && step === "fill-fields" ? "max-w-4xl" : "max-w-lg"
+        )}
       >
         <div className="flex items-start justify-between">
           <div>
@@ -516,86 +546,221 @@ function FillTemplateDialog({
         )}
 
         {!confirmed && step === "fill-fields" && (
-          <div className="mt-6 space-y-5">
+          <div className="mt-6">
             {defaultsLoading && !initial && (
               <p className="text-sm text-slate-400">Loading event details...</p>
             )}
 
             {(!defaultsLoading || !!initial) && (
-              <>
-                <div className="space-y-3">
-                  <p className="text-sm font-medium text-[var(--brand-navy)]">
-                    Standard details (auto-filled, editable)
-                  </p>
-                  {Object.keys(STANDARD_FIELD_LABELS).map((key) => (
-                    <div key={key} className="space-y-1.5">
-                      <Label htmlFor={`standard-${key}`}>{STANDARD_FIELD_LABELS[key]}</Label>
-                      <Input
-                        id={`standard-${key}`}
-                        value={standardValues[key] ?? ""}
-                        onChange={(e) =>
-                          setStandardValues((values) => ({ ...values, [key]: e.target.value }))
-                        }
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {template.custom_fields.length > 0 && (
+              <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+                {/* ---------------- form column ---------------- */}
+                <div className="space-y-6">
                   <div className="space-y-3">
                     <p className="text-sm font-medium text-[var(--brand-navy)]">
-                      This template's own fields
+                      Event details (auto-filled, editable)
                     </p>
-                    {template.custom_fields.map((field) => (
-                      <div key={field.id} className="space-y-1.5">
-                        <Label htmlFor={`custom-${field.field_key}`}>{field.label}</Label>
+                    {Object.keys(STANDARD_FIELD_LABELS)
+                      .filter((key) => key !== "event_time")
+                      .map((key) => (
+                        <div key={key} className="space-y-1.5">
+                          <Label htmlFor={`standard-${key}`}>{STANDARD_FIELD_LABELS[key]}</Label>
+                          <Input
+                            id={`standard-${key}`}
+                            value={standardValues[key] ?? ""}
+                            onChange={(e) => setStandard(key, e.target.value)}
+                          />
+                        </div>
+                      ))}
+                  </div>
+
+                  {/* Time: From - To */}
+                  <div className="space-y-3 rounded-2xl border border-slate-100 p-4">
+                    <p className="flex items-center gap-2 text-sm font-medium text-[var(--brand-navy)]">
+                      <Clock className="h-4 w-4 text-[var(--brand-pink)]" />
+                      Event time
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="standard-time_from">From</Label>
                         <Input
-                          id={`custom-${field.field_key}`}
-                          value={customValues[field.field_key] ?? ""}
-                          onChange={(e) =>
-                            setCustomValues((values) => ({
-                              ...values,
-                              [field.field_key]: e.target.value,
-                            }))
-                          }
+                          id="standard-time_from"
+                          type="time"
+                          value={standardValues.time_from ?? ""}
+                          onChange={(e) => setStandard("time_from", e.target.value)}
                         />
                       </div>
-                    ))}
+                      <div className="space-y-1.5">
+                        <Label htmlFor="standard-time_to">To</Label>
+                        <Input
+                          id="standard-time_to"
+                          type="time"
+                          value={standardValues.time_to ?? ""}
+                          onChange={(e) => setStandard("time_to", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    {timeText && (
+                      <p className="text-xs text-slate-500">
+                        Guests will see: <span className="font-semibold">{timeText}</span>
+                      </p>
+                    )}
                   </div>
-                )}
 
-                {template.body_text ? (
-                  <div className="rounded-2xl bg-slate-50 p-3.5">
-                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Preview
+                  {/* Font style */}
+                  <div className="space-y-3">
+                    <p className="flex items-center gap-2 text-sm font-medium text-[var(--brand-navy)]">
+                      <Type className="h-4 w-4 text-[var(--brand-pink)]" />
+                      Font style
                     </p>
-                    <p className="whitespace-pre-line text-sm text-slate-600">
-                      {renderLivePreview(template.body_text, standardValues, customValues)}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {FONT_STYLE_OPTIONS.map((option) => {
+                        const isSelected = fontStyle === option.value;
+
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setStandard("font_style", option.value)}
+                            className={cn(
+                              "rounded-2xl border px-3 py-3 text-center transition-colors",
+                              isSelected
+                                ? "border-[var(--brand-pink)] bg-[var(--brand-pink)]/5"
+                                : "border-slate-200 hover:border-slate-300"
+                            )}
+                          >
+                            <span
+                              className="block text-2xl leading-none text-[var(--brand-navy)]"
+                              style={{ fontFamily: option.family }}
+                            >
+                              Aa Wedding
+                            </span>
+                            <span className="mt-1.5 block text-xs text-slate-500">{option.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Font colour */}
+                  <div className="space-y-3">
+                    <p className="flex items-center gap-2 text-sm font-medium text-[var(--brand-navy)]">
+                      <Palette className="h-4 w-4 text-[var(--brand-pink)]" />
+                      Font colour
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setStandard("text_color", "")}
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                          !textColor
+                            ? "border-[var(--brand-pink)] bg-[var(--brand-pink)]/5 text-[var(--brand-pink)]"
+                            : "border-slate-200 text-slate-500 hover:border-slate-300"
+                        )}
+                      >
+                        Auto
+                      </button>
+
+                      {TEXT_COLOR_PRESETS.map((preset) => (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          title={preset.label}
+                          aria-label={preset.label}
+                          onClick={() => setStandard("text_color", preset.value)}
+                          className={cn(
+                            "h-8 w-8 rounded-full border-2 transition-transform hover:scale-110",
+                            textColor.toLowerCase() === preset.value.toLowerCase()
+                              ? "border-[var(--brand-pink)] ring-2 ring-[var(--brand-pink)]/30"
+                              : "border-slate-200"
+                          )}
+                          style={{ backgroundColor: preset.value }}
+                        />
+                      ))}
+
+                      <label
+                        className="relative flex h-8 cursor-pointer items-center gap-2 rounded-full border border-dashed border-slate-300 px-3 text-xs font-semibold text-slate-500 hover:border-slate-400"
+                        title="Pick any colour"
+                      >
+                        <span
+                          className="h-4 w-4 rounded-full border border-slate-200"
+                          style={{ backgroundColor: textColor || "#ffffff" }}
+                        />
+                        Custom
+                        <input
+                          type="color"
+                          value={textColor || "#2b2b2b"}
+                          onChange={(e) => setStandard("text_color", e.target.value)}
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          aria-label="Pick a custom font colour"
+                        />
+                      </label>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Pick whatever reads best on this template's background. "Auto" chooses dark or
+                      light for you.
                     </p>
                   </div>
-                ) : (
-                  <p className="text-xs text-slate-400">
-                    After you confirm, your details are drawn onto the invitation and you can see
-                    the result on this page.
-                  </p>
-                )}
 
-                {errorMessage && <FormError message={errorMessage} />}
+                  {template.custom_fields.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-[var(--brand-navy)]">
+                        This template's own fields
+                      </p>
+                      {template.custom_fields.map((field) => (
+                        <div key={field.id} className="space-y-1.5">
+                          <Label htmlFor={`custom-${field.field_key}`}>{field.label}</Label>
+                          <Input
+                            id={`custom-${field.field_key}`}
+                            value={customValues[field.field_key] ?? ""}
+                            onChange={(e) =>
+                              setCustomValues((values) => ({
+                                ...values,
+                                [field.field_key]: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                <div className="flex gap-3">
-                  <Button variant="outline" className="flex-1" onClick={() => setStep("pick-event")}>
-                    Back
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    onClick={handleConfirm}
-                    disabled={!canConfirm}
-                    isLoading={fillMutation.isPending}
-                  >
-                    Confirm
-                  </Button>
+                  {errorMessage && <FormError message={errorMessage} />}
+
+                  <div className="flex gap-3">
+                    <Button variant="outline" className="flex-1" onClick={() => setStep("pick-event")}>
+                      Back
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleConfirm}
+                      disabled={!canConfirm}
+                      isLoading={fillMutation.isPending}
+                    >
+                      Confirm
+                    </Button>
+                  </div>
                 </div>
-              </>
+
+                {/* ---------------- live preview column ---------------- */}
+                <div className="lg:sticky lg:top-0 lg:self-start">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Live preview
+                  </p>
+                  <LiveCardPreview
+                    template={template}
+                    standardValues={standardValues}
+                    customValues={customValues}
+                    timeText={timeText}
+                    fontStyle={fontStyle}
+                    textColor={textColor}
+                  />
+                  <p className="mt-2 text-xs text-slate-400">
+                    Close to the final card. After you confirm, the exact card is drawn and shown on
+                    this page.
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -636,6 +801,124 @@ function ConfirmedStep({
       <Button className="mt-5 w-full" onClick={onClose}>
         Done
       </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Live card preview (browser approximation of the server-drawn card)
+// ---------------------------------------------------------------------
+
+function LiveCardPreview({
+  template,
+  standardValues,
+  customValues,
+  timeText,
+  fontStyle,
+  textColor,
+}: {
+  template: InvitationTemplate;
+  standardValues: Record<string, string>;
+  customValues: Record<string, string>;
+  timeText: string;
+  fontStyle: string;
+  textColor: string;
+}) {
+  const family =
+    FONT_STYLE_OPTIONS.find((option) => option.value === fontStyle)?.family ??
+    FONT_STYLE_OPTIONS[0].family;
+  const isScript = fontStyle === "script" || fontStyle === "playful";
+  const titleFamily = family;
+  const bodyFamily = isScript || fontStyle === "modern" ? "'Montserrat', sans-serif" : family;
+
+  const color = textColor || "#2B2B2B";
+  const background = resolveMediaUrl(template.preview_image);
+
+  const detailBlocks: Array<[string, string]> = [
+    ["Date", standardValues.event_date ?? ""],
+    ["Time", timeText],
+    ["Venue", standardValues.venue_name ?? ""],
+    ...template.custom_fields.map(
+      (field) => [field.label, customValues[field.field_key] ?? ""] as [string, string]
+    ),
+  ];
+
+  return (
+    <div
+      className="relative mx-auto aspect-[3/4] w-full max-w-[320px] overflow-hidden rounded-2xl bg-slate-100 shadow-md ring-1 ring-slate-200"
+      style={{ containerType: "inline-size" }}
+    >
+      {background ? (
+        <img src={background} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      ) : (
+        <div className="absolute inset-0" style={{ background: "var(--gradient-brand-soft)" }} />
+      )}
+
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center px-[12%] text-center"
+        style={{ color, textShadow: "0 1px 6px rgba(0,0,0,0.18)" }}
+      >
+        {template.body_text ? (
+          <p
+            className="whitespace-pre-line"
+            style={{ fontFamily: bodyFamily, fontSize: "4.2cqw", lineHeight: 1.5 }}
+          >
+            {renderLivePreview(template.body_text, standardValues, customValues)}
+          </p>
+        ) : (
+          <>
+            <p
+              className="font-semibold uppercase"
+              style={{ fontFamily: "'Montserrat', sans-serif", fontSize: "2.4cqw", letterSpacing: "0.3em" }}
+            >
+              You are invited
+            </p>
+            <p
+              className="mt-[3%]"
+              style={{ fontFamily: bodyFamily, fontSize: "4.2cqw", fontWeight: 600 }}
+            >
+              Dear Guest Name,
+            </p>
+            <p
+              className="mt-[3%] leading-tight"
+              style={{
+                fontFamily: titleFamily,
+                fontSize: isScript ? "10.5cqw" : "8cqw",
+                fontWeight: isScript ? 400 : 700,
+              }}
+            >
+              {standardValues.event_name || "Your event name"}
+            </p>
+            <span
+              className="my-[5%] block h-[2px] w-[18%]"
+              style={{ backgroundColor: color }}
+            />
+            <div className="space-y-[3.5%]">
+              {detailBlocks
+                .filter(([, value]) => !!value)
+                .map(([label, value]) => (
+                  <div key={label}>
+                    <p
+                      className="font-semibold uppercase"
+                      style={{
+                        fontFamily: "'Montserrat', sans-serif",
+                        fontSize: "2.2cqw",
+                        letterSpacing: "0.25em",
+                      }}
+                    >
+                      {label}
+                    </p>
+                    <p
+                      style={{ fontFamily: bodyFamily, fontSize: "4.2cqw", fontWeight: 600 }}
+                    >
+                      {value}
+                    </p>
+                  </div>
+                ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
