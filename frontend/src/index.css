@@ -48,15 +48,17 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Accessibility: Tailwind's default slate-400 (#94a3b8) is about 2.6:1 on
+   white and slate-500 is borderline. Both are used for real text across the
+   app, so they are darkened once here (WCAG AA needs 4.5:1) instead of
+   editing every page. */
+@theme {
+  --color-slate-400: #64748b;
+  --color-slate-500: #4f5d73;
+}
+
 :root {
 
-  --brand-green: #22a866;
-  --brand-green-dark: #157a48;
-  --brand-gold: #eab308;
-
-  --gradient-brand: linear-gradient(135deg, var(--brand-navy) 0%, #4a1f6b 45%, var(--brand-pink) 100%);
-  --gradient-brand-soft: linear-gradient(135deg, rgba(36, 21, 66, 0.08) 0%, rgba(212, 20, 114, 0.08) 100%);
-  --surface-muted: #f8f7fb;
   /* Core brand - values unchanged from before, only expanded with new tokens */
   --brand-navy: #241542;
   --brand-navy-light: #3a2266;
@@ -81,8 +83,8 @@
   --gradient-brand-soft: linear-gradient(135deg, rgba(36,21,66,0.06) 0%, rgba(212,20,114,0.06) 100%);
 
   /* Native app safe-area insets (status bar / notch / home indicator).
-     env() resolves to 0px on the web, and to the real inset when this
-     app is wrapped with Capacitor on iOS/Android. */
+    env() resolves to 0px on the web, and to the real inset when this
+    app is wrapped with Capacitor on iOS/Android. */
   --safe-area-inset-top: env(safe-area-inset-top, 0px);
   --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 
@@ -163,7 +165,12 @@
   #root {
     min-width: 0;
     max-width: 100%;
-    overflow-x: hidden;
+  }
+  /* "clip" hides horizontal overflow WITHOUT turning body into a scroll
+     container (overflow:hidden did, which breaks position:sticky headers). */
+  body,
+  #root {
+    overflow-x: clip;
   }
   body {
     @apply bg-slate-50/70 text-foreground antialiased selection:bg-pink-100 selection:text-[var(--brand-pink)];
@@ -210,9 +217,9 @@
 }
 
 /* Shadow tint uses the brand navy (#241542 -> 36,21,66) instead of flat
-   black - a subtly "branded" shadow reads as more premium than a generic
-   gray one, at the same opacity a neutral shadow would use. Palette itself
-   is unchanged; this only reuses --brand-navy as a shadow color. */
+  black - a subtly "branded" shadow reads as more premium than a generic
+  gray one, at the same opacity a neutral shadow would use. Palette itself
+  is unchanged; this only reuses --brand-navy as a shadow color. */
 .soft-shadow {
   box-shadow:
     0 1px 2px -1px rgba(36, 21, 66, 0.04),
@@ -228,10 +235,10 @@
 }
 
 /* A step up from a plain Card: a faint navy-tinted border plus a subtle
-   inset top highlight (a thin light edge along the top, as if catching
-   light) on top of the same tinted shadow language as soft-shadow. Use for
-   surfaces that should read as a level more important than a default card
-   (e.g. guest profile cards), not as the default for every card. */
+  inset top highlight (a thin light edge along the top, as if catching
+  light) on top of the same tinted shadow language as soft-shadow. Use for
+  surfaces that should read as a level more important than a default card
+  (e.g. guest profile cards), not as the default for every card. */
 .premium-card {
   position: relative;
   border-radius: 1.5rem;
@@ -245,10 +252,10 @@
 }
 
 /* Opt-in micro-interaction for any card that is itself a click target
-   (wraps a link/button, or is one) - a slight lift plus a deeper shadow on
-   hover. Deliberately NOT applied to Card by default: a card that merely
-   contains clickable rows (e.g. a dashboard widget) shouldn't imply the
-   whole surface is clickable when only its rows are. */
+  (wraps a link/button, or is one) - a slight lift plus a deeper shadow on
+  hover. Deliberately NOT applied to Card by default: a card that merely
+  contains clickable rows (e.g. a dashboard widget) shouldn't imply the
+  whole surface is clickable when only its rows are. */
 .card-hover-lift {
   transition: transform 200ms ease, box-shadow 200ms ease;
 }
@@ -269,13 +276,109 @@
   .mobile-safe-top {
     padding-top: calc(0.75rem + var(--safe-area-inset-top));
   }
-  .badge-success {
-    background: color-mix(in oklab, var(--brand-green) 12%, white);
-    color: var(--brand-green-dark);
+}
+
+/* Status badges (previously trapped inside the mobile-only media query, so
+   they had no background on desktop). */
+.badge-success {
+  background: color-mix(in oklab, var(--brand-green) 12%, white);
+  color: var(--brand-green-dark);
+}
+
+.badge-gold {
+  background: color-mix(in oklab, var(--brand-gold) 16%, white);
+  color: #8a5c0a;
+}
+
+/* iOS Safari zooms the whole page when a focused field has a font size
+   under 16px. Unlayered on purpose so it beats Tailwind's text-sm. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
   }
-  
-  .badge-gold {
-    background: color-mix(in oklab, var(--brand-gold) 16%, white);
-    color: #8a5c0a;
+}
+
+/* ------------------------------------------------------------------ */
+/* Public website additions                                            */
+/* ------------------------------------------------------------------ */
+
+/* A visible keyboard focus ring on interactive elements. Mouse and touch
+   users never see it (focus-visible only matches keyboard focus). */
+@layer base {
+  :where(a, button, summary, [role="button"]):focus-visible {
+    outline: 2px solid var(--brand-pink);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes scan {
+  0%,
+  100% {
+    top: 8%;
+  }
+  50% {
+    top: 88%;
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 7s ease-in-out infinite;
+}
+
+.animate-scan {
+  animation: scan 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .animate-float-slow,
+  .animate-scan {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Accessibility (Phase 16)                                            */
+/* ------------------------------------------------------------------ */
+
+/* Unlayered on purpose: nav links use utility classes that remove the
+   outline, and the :where() rule above has zero specificity, so sidebar and
+   tab-bar links showed no keyboard focus. This one always wins. */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--brand-pink);
+  outline-offset: 2px;
+}
+
+/* Touch devices and small screens: keep buttons at least 40px tall, and
+   icon-only buttons 40px square, so they are easy to hit. */
+@media (pointer: coarse), (max-width: 1023px) {
+  button,
+  [role="button"],
+  select {
+    min-height: 2.5rem;
+  }
+
+  button:has(> svg:only-child) {
+    min-width: 2.5rem;
   }
 }

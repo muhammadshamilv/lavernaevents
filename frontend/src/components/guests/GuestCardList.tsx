@@ -162,9 +162,12 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
     search: debouncedSearch || undefined,
     response_status: responseFilter || undefined,
     invitation_status: invitationFilter || undefined,
-    // "uncategorized" has no server-side filter param, so that case is
-    // filtered client-side below.
-    category: typeof categoryFilter === "number" ? categoryFilter : undefined,
+    category:
+      typeof categoryFilter === "number"
+        ? categoryFilter
+        : categoryFilter === "uncategorized"
+          ? "uncategorized"
+          : undefined,
   };
 
   const { data, isLoading, isError } = useGuests(eventId, params);
@@ -178,13 +181,26 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
   const [deleteTarget, setDeleteTarget] = useState<Guest | null>(null);
   const [remindingGuestId, setRemindingGuestId] = useState<number | null>(null);
 
-  const allGuests = data?.guests ?? [];
-  const guests =
-    categoryFilter === "uncategorized"
-      ? allGuests.filter((guest) => guest.category == null)
-      : allGuests;
+  const guests = data?.guests ?? [];
   const pagination = data?.pagination;
   const activeFilterCount = (responseFilter ? 1 : 0) + (invitationFilter ? 1 : 0);
+  const hasFilters =
+    !!debouncedSearch || !!responseFilter || !!invitationFilter || categoryFilter !== "all";
+
+  const clearFilters = () => {
+    setSearchInput("");
+    setResponseFilter("");
+    setInvitationFilter("");
+    setCategoryFilter("all");
+  };
+
+  // If the current page no longer exists (e.g. the last guest on it was
+  // deleted) step back to the last page that does.
+  useEffect(() => {
+    if (pagination && pagination.total_pages > 0 && page > pagination.total_pages) {
+      setPage(pagination.total_pages);
+    }
+  }, [pagination, page]);
 
   const channelMeta = channel ? CHANNEL_META[channel] : null;
   const isBulkChannel = !!channelMeta?.bulk;
@@ -265,7 +281,16 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
 
   const handleDelete = () => {
     if (!deleteTarget) return;
-    deleteMutation.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
+    deleteMutation.mutate(deleteTarget.id, {
+      onSuccess: () => {
+        setDeleteTarget(null);
+        toastStore.show("Guest removed.");
+      },
+      onError: (error) => {
+        setDeleteTarget(null);
+        toastStore.show(getApiErrorMessage(error, "Couldn't remove this guest."), "error");
+      },
+    });
   };
 
   // WhatsApp: one click, no confirmation. The tab is opened right now (on
@@ -401,7 +426,8 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
           <div className="relative min-w-[220px] flex-1">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search guests"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by name or mobile number"
@@ -411,6 +437,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
 
           <div className="hidden items-center gap-3 lg:flex">
             <Select
+              aria-label="Filter by response"
               value={responseFilter}
               onChange={(e) => setResponseFilter(e.target.value as ResponseStatus | "")}
               className="w-44"
@@ -422,6 +449,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
               ))}
             </Select>
             <Select
+              aria-label="Filter by invitation status"
               value={invitationFilter}
               onChange={(e) => setInvitationFilter(e.target.value as InvitationStatus | "")}
               className="w-44"
@@ -457,6 +485,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
         {filtersOpen && (
           <div className="mt-3 space-y-2 rounded-2xl border border-slate-100 bg-white p-3 lg:hidden">
             <Select
+              aria-label="Filter by response"
               value={responseFilter}
               onChange={(e) => setResponseFilter(e.target.value as ResponseStatus | "")}
             >
@@ -467,6 +496,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
               ))}
             </Select>
             <Select
+              aria-label="Filter by invitation status"
               value={invitationFilter}
               onChange={(e) => setInvitationFilter(e.target.value as InvitationStatus | "")}
             >
@@ -488,7 +518,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                 checked={allPageSelected || selectAllMatching}
                 onChange={togglePage}
                 disabled={selectableIds.length === 0}
-                className="h-4 w-4 accent-[var(--brand-pink)]"
+                className="h-5 w-5 accent-[var(--brand-pink)]"
               />
               Select all on this page
               {channel === "EMAIL" && (
@@ -553,13 +583,26 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
               <UserPlus className="h-6 w-6" />
             </span>
-            <p className="mt-4 font-semibold text-[var(--brand-navy)]">No guests yet</p>
-            <p className="mt-1 text-sm text-slate-500">
-              Add your first guest, or import a list from a CSV file.
-            </p>
-            <Button className="mt-6" onClick={openCreate}>
-              Add your first guest
-            </Button>
+            {hasFilters ? (
+              <>
+                <p className="mt-4 font-semibold text-[var(--brand-navy)]">
+                  No guests match your filters
+                </p>
+                <Button className="mt-6" variant="outline" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="mt-4 font-semibold text-[var(--brand-navy)]">No guests yet</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Add your first guest, or import a list from a CSV file.
+                </p>
+                <Button className="mt-6" onClick={openCreate}>
+                  Add your first guest
+                </Button>
+              </>
+            )}
           </div>
         )}
 
@@ -589,7 +632,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                           onChange={() => toggleGuest(guest.id)}
                           disabled={!selectable}
                           aria-label={`Select ${guest.name}`}
-                          className="h-4 w-4 accent-[var(--brand-pink)] disabled:opacity-40"
+                          className="h-5 w-5 accent-[var(--brand-pink)] disabled:opacity-40"
                         />
                       )}
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-sm font-semibold text-[var(--brand-pink)] lg:h-12 lg:w-12">
@@ -681,7 +724,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                     <button
                       type="button"
                       onClick={() => openEdit(guest)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-[var(--brand-navy)]"
+                      className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-[var(--brand-navy)]"
                       aria-label="Edit guest"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -689,7 +732,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(guest)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                      className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Remove guest"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -711,7 +754,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                 type="button"
                 onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 disabled={!pagination.previous}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Previous page"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -720,7 +763,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                 type="button"
                 onClick={() => setPage((prev) => prev + 1)}
                 disabled={!pagination.next}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Next page"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -731,7 +774,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
 
         {/* Bulk send bar: appears as soon as something is ticked */}
         {isBulkChannel && channel && selectionCount > 0 && (
-          <div className="sticky bottom-4 z-30 mt-6">
+          <div className="sticky bottom-[calc(5.5rem+var(--safe-area-inset-bottom))] z-30 mt-6 lg:bottom-4">
             <div className="flex items-center justify-between gap-3 rounded-full bg-[var(--brand-navy)] px-5 py-3 text-white shadow-lg">
               <span className="text-sm font-medium">
                 {selectionCount} selected

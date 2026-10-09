@@ -23,10 +23,7 @@ export interface AdminDashboardStats {
   membership_sales: number;
   revenue: number;
   storage_usage_mb: number;
-  // Phase 26: present only once the backend's get_dashboard_stats() is
-  // updated to include it - treated as optional so this type keeps working
-  // if that field isn't live yet in a given deployment.
-  channel_usage?: AdminChannelUsage[];
+  channel_usage: AdminChannelUsage[];
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +58,7 @@ export interface AdminUsersQueryParams {
   search?: string;
   role?: UserRole;
   is_suspended?: boolean;
+  is_verified?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,12 +72,14 @@ export interface AdminMembershipPlan {
   description: string;
   price: string;
   duration_days: number;
-  guest_limit: number | null;
-  event_limit: number | null;
+  // These three always have a value (the database cannot store "unlimited").
+  guest_limit: number;
+  event_limit: number;
+  storage_limit_mb: number;
+  // These can be null = unlimited.
   total_invitations: number | null;
   template_limit: number | null;
   voice_call_limit: number | null;
-  storage_limit_mb: number | null;
   gallery_enabled: boolean;
   qr_code_enabled: boolean;
   photographer_access_enabled: boolean;
@@ -95,12 +95,12 @@ export interface AdminMembershipPlanPayload {
   description?: string;
   price: string;
   duration_days: number;
-  guest_limit?: number | null;
-  event_limit?: number | null;
+  guest_limit: number;
+  event_limit: number;
+  storage_limit_mb: number;
   total_invitations?: number | null;
   template_limit?: number | null;
   voice_call_limit?: number | null;
-  storage_limit_mb?: number | null;
   gallery_enabled?: boolean;
   qr_code_enabled?: boolean;
   photographer_access_enabled?: boolean;
@@ -197,22 +197,26 @@ export type InvitationChannelKey = "WHATSAPP" | "EMAIL" | "SMS" | "VOICE_CALL";
 
 // Matches PlatformChannelPoolSerializer exactly.
 export interface PlatformChannelPool {
-  id: number;
+  /** null for a channel that has never been topped up. */
+  id: number | null;
   channel: InvitationChannelKey;
   channel_display: string;
   total_capacity: number;
   used: number;
   remaining: number;
   low_balance_threshold: number;
+  /** false = never topped up. Such a channel is UNLIMITED, not empty. */
+  is_configured: boolean;
   is_low: boolean;
   is_exhausted: boolean;
-  updated_at: string;
+  updated_at: string | null;
 }
 
 export interface PlatformPoolTopupPayload {
   channel: InvitationChannelKey;
   amount: number;
   note?: string;
+  low_balance_threshold?: number;
 }
 
 // Matches PlatformPoolTopupSerializer exactly.

@@ -174,9 +174,11 @@ class Subscription(models.Model):
     # Phase 26: extra allowance bought via TopupPurchase, ON TOP OF the
     # plan's own total_invitations/voice_call_limit. Added to the plan's
     # base limit when computing *_remaining() below - a topup never
-    # replaces or resets the plan limit, it only extends it, and (like
-    # invitations_used/voice_calls_used) does not carry over to a new
-    # Subscription row if the organizer later upgrades/downgrades/renews.
+    # replaces or resets the plan limit, it only extends it. The UNUSED part
+    # of a topup carries over to the new Subscription row when the organizer
+    # upgrades/downgrades/renews (see memberships.services.activate_plan_for_user),
+    # because the organizer paid real money for it. Plan usage itself
+    # (invitations_used/voice_calls_used) starts again at 0.
     invitations_topup = models.PositiveIntegerField(
         default=0,
         help_text="Extra invitation allowance purchased via TopupPurchase, added on top of the plan's total_invitations.",
@@ -209,6 +211,19 @@ class Subscription(models.Model):
     class Meta:
         db_table = "subscriptions"
         ordering = ["-created_at"]
+        constraints = [
+            # A user can only ever have ONE active subscription. Enforced by
+            # the database so two simultaneous requests / webhooks can never
+            # leave a user with two active plans.
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(status="ACTIVE"),
+                name="unique_active_subscription_per_user",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["status", "expires_at"], name="sub_status_expiry_idx"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.user.mobile_number} - {self.plan.name} ({self.status})"
@@ -287,5 +302,3 @@ class OrganizerTemplateLibrary(models.Model):
 
     def __str__(self) -> str:
         return f"{self.organizer.mobile_number} - {self.template.name}"
-    
-

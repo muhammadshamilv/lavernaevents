@@ -1,8 +1,7 @@
-// Field names here must match dashboard/serializers.py's
-// OrganizerOverviewSerializer exactly - total_accepted and
-// total_expected_attendance, NOT accepted_count/expected_attendance (those
-// names belong to EventDashboardStats below, a different serializer with
-// different field names for the same underlying concepts).
+// Field names here must match dashboard/serializers.py exactly.
+// OrganizerOverview (all events) uses total_accepted / total_expected_attendance;
+// EventDashboardStats (one event) uses accepted_count / expected_attendance -
+// different serializers, same underlying concepts.
 export interface OrganizerOverview {
   total_events: number;
   total_guests: number;
@@ -13,13 +12,24 @@ export interface OrganizerOverview {
 export interface EventDashboardStats {
   total_guests: number;
   accepted_count: number;
+  rejected_count: number;
+  maybe_count: number;
+  pending_count: number;
+  /** Share of guests who answered, 0 - 1. */
+  response_rate: number;
   invitations_sent: number;
+  invitations_not_sent: number;
+  invitations_failed: number;
   notifications_sent: number;
+  whatsapp_sent_count: number;
+  email_sent_count: number;
+  sms_sent_count: number;
+  voice_call_sent_count: number;
   expected_attendance: number;
 }
 
 // --------------------------------------------------
-// Phase 25: invitation-focused dashboard overhaul
+// Invitation-focused dashboard
 // --------------------------------------------------
 
 export type InvitationChannelKey = "WHATSAPP" | "EMAIL" | "SMS" | "VOICE_CALL";
@@ -35,7 +45,9 @@ export interface EventNeedingAttention {
   event_id: number;
   event_name: string;
   event_date: string;
+  /** Guests already invited (not everyone on the list). */
   total_guests: number;
+  /** Invited guests who have not answered. */
   pending_count: number;
   pending_rate: number;
   pending_whatsapp_reminders: number;
@@ -49,7 +61,7 @@ export interface QuotaUsage {
   voice_calls_used: number;
   voice_calls_total: number | null;
   voice_calls_remaining: number | null;
-  expires_at: string;
+  expires_at: string | null;
 }
 
 export interface OrganizerInvitationOverview extends OrganizerOverview {

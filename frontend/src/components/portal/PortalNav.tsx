@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CalendarDays,
@@ -17,6 +17,20 @@ import logo from "@/assets/laverna-logo.png";
 import { useAuthStore } from "@/stores/auth.store";
 import { useLogoutMutation } from "@/queries/useAuthQueries";
 import { cn } from "@/lib/utils";
+
+// Closes an overlay when Escape is pressed.
+function useEscapeToClose(open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+}
 
 // Single source of truth for every portal destination. Desktop's sidebar
 // and mobile's bottom bar / "More" sheet all read from this one list, so a
@@ -119,6 +133,7 @@ export function PortalSidebar() {
 
 export function PortalTopBar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  useEscapeToClose(menuOpen, () => setMenuOpen(false));
   const { user } = useAuthStore();
   const initial = user?.full_name?.trim()?.[0]?.toUpperCase() ?? "?";
 
@@ -137,6 +152,8 @@ export function PortalTopBar() {
           onClick={() => setMenuOpen((prev) => !prev)}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-navy)] text-sm font-semibold text-white"
           aria-label="Account menu"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
         >
           {initial}
         </button>
@@ -153,7 +170,7 @@ export function PortalTopBar() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-11 z-50 w-44 overflow-hidden rounded-2xl border border-slate-100 bg-white soft-shadow-lg p-1.5"
+                className="absolute right-0 top-11 z-50 w-56 overflow-hidden rounded-2xl border border-slate-100 bg-white soft-shadow-lg p-1.5"
               >
                 <AccountBlock onNavigate={() => setMenuOpen(false)} />
               </motion.div>
@@ -173,8 +190,15 @@ export function PortalTopBar() {
 // holds 4 secondary items - still fits a 3-column grid cleanly.
 export function PortalBottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
+  useEscapeToClose(moreOpen, () => setMoreOpen(false));
+  const { pathname } = useLocation();
 
   const secondaryItems = NAV_ITEMS.filter((item) => !PRIMARY_MOBILE_TABS.includes(item.to));
+
+  // Highlight "More" while the user is on a page that only lives inside it.
+  const onSecondaryPage =
+    pathname.startsWith("/portal/settings") ||
+    secondaryItems.some((item) => pathname.startsWith(item.to));
 
   return (
     <>
@@ -204,7 +228,14 @@ export function PortalBottomNav() {
         <button
           type="button"
           onClick={() => setMoreOpen(true)}
-          className="flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-xs font-medium text-slate-400 transition-all duration-200 hover:text-slate-600"
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+          className={cn(
+            "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-xs font-medium transition-all duration-200",
+            onSecondaryPage
+              ? "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]"
+              : "text-slate-400 hover:text-slate-600"
+          )}
         >
           <LayoutGrid className="h-5 w-5" />
           More
@@ -227,7 +258,10 @@ export function PortalBottomNav() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl bg-white p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-label="More"
+              className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white p-4"
               style={{ paddingBottom: "calc(1.25rem + var(--safe-area-inset-bottom))" }}
             >
               <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-200" />
@@ -237,7 +271,7 @@ export function PortalBottomNav() {
                 <button
                   type="button"
                   onClick={() => setMoreOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
                   aria-label="Close"
                 >
                   <X className="h-4 w-4" />

@@ -27,6 +27,9 @@ class InvitationPublicSerializer(serializers.Serializer):
     accent_color = serializers.CharField(allow_blank=True)
     response_status = serializers.CharField()
     already_responded = serializers.BooleanField()
+    # False once the event is cancelled or completed.
+    responses_open = serializers.BooleanField()
+    is_cancelled = serializers.BooleanField()
     calendar_url = serializers.CharField()
     google_calendar_url = serializers.CharField()
 

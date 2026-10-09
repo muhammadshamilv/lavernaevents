@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import {
   createReminderSchedule,
   deleteReminderSchedule,
+  deleteCustomTemplate,
   deselectActiveTemplate,
   fillActiveTemplate,
   getActiveFilledTemplate,
@@ -9,7 +10,7 @@ import {
   getEventInvitations,
   getEventStandardDefaults,
   getInvitationReport,
-  getInvitationTemplates,
+  getInvitationTemplateList,
   getMyCustomTemplates,
   getPendingWhatsAppReminders,
   getReminderSchedules,
@@ -25,6 +26,7 @@ import type { CreateReminderSchedulePayload } from "@/types/guest.types";
 
 export const invitationKeys = {
   templates: ["invitations", "templates"] as const,
+  templateList: ["invitations", "templates", "list"] as const,
   myTemplates: ["invitations", "templates", "mine"] as const,
   activeTemplate: ["invitations", "templates", "active"] as const,
   activePreview: ["invitations", "templates", "active", "preview"] as const,
@@ -33,11 +35,37 @@ export const invitationKeys = {
     ["invitations", "event", eventId, "list", page] as const,
 };
 
+// One request feeds both hooks below (same query key): the template list
+// and the plan's template usage that comes back with it.
 export function useInvitationTemplates() {
   return useQuery({
-    queryKey: invitationKeys.templates,
-    queryFn: getInvitationTemplates,
+    queryKey: invitationKeys.templateList,
+    queryFn: getInvitationTemplateList,
     staleTime: 5 * 60 * 1000,
+    select: (result) => result.templates,
+  });
+}
+
+export function useTemplateUsage() {
+  return useQuery({
+    queryKey: invitationKeys.templateList,
+    queryFn: getInvitationTemplateList,
+    staleTime: 5 * 60 * 1000,
+    select: (result) => result.meta,
+  });
+}
+
+export function useDeleteCustomTemplateMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (templateId: number) => deleteCustomTemplate(templateId),
+    onSuccess: () => {
+      // The template list, usage count and (if it was the active one) the
+      // active template all change.
+      queryClient.invalidateQueries({ queryKey: invitationKeys.templates });
+      queryClient.removeQueries({ queryKey: invitationKeys.activePreview });
+    },
   });
 }
 

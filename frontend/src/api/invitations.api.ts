@@ -12,6 +12,9 @@ import type {
   InvitationPreviewResult,
   InvitationReport,
   InvitationTemplate,
+  InvitationTemplateList,
+  DeleteTemplateResult,
+  TemplateListMeta,
 } from "@/types/invitation.types";
 import type {
   CreateReminderSchedulePayload,
@@ -22,9 +25,26 @@ import type {
 // NOTE: same URL-mounting pattern as guests.api.ts - invitations.urls is
 // mounted at bare "api/" in config/urls.py.
 
+/** Templates plus the plan's template usage (limit / used). */
+export async function getInvitationTemplateList(): Promise<InvitationTemplateList> {
+  const { data } = await apiClient.get<
+    ApiResponse<InvitationTemplate[]> & { meta?: TemplateListMeta }
+  >("/invitation-templates/");
+
+  return {
+    templates: data.data,
+    meta: data.meta ?? { template_limit: null, template_count: 0 },
+  };
+}
+
 export async function getInvitationTemplates(): Promise<InvitationTemplate[]> {
-  const { data } = await apiClient.get<ApiResponse<InvitationTemplate[]>>(
-    "/invitation-templates/"
+  return (await getInvitationTemplateList()).templates;
+}
+
+/** Remove one of the organizer's own uploaded templates. */
+export async function deleteCustomTemplate(templateId: number): Promise<DeleteTemplateResult> {
+  const { data } = await apiClient.delete<ApiResponse<DeleteTemplateResult>>(
+    `/invitation-templates/${templateId}/`
   );
 
   return data.data;

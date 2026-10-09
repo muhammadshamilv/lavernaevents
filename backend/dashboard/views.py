@@ -26,6 +26,17 @@ def get_owned_event_or_none(pk: int, user) -> Event | None:
     return Event.objects.filter(pk=pk, organizer=user).first()
 
 
+def _not_found_response() -> Response:
+    return Response(
+        {
+            "success": False,
+            "message": "Event not found.",
+            "errors": {"event": ["No event found with this ID."]},
+        },
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
 class EventDashboardView(APIView):
     """Return dashboard statistics for a single event."""
 
@@ -37,14 +48,7 @@ class EventDashboardView(APIView):
         event = get_owned_event_or_none(event_pk, request.user)
 
         if event is None:
-            return Response(
-                {
-                    "success": False,
-                    "message": "Event not found.",
-                    "errors": {"event": ["No event found with this ID."]},
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return _not_found_response()
 
         stats = get_event_dashboard_stats(event)
 
@@ -71,14 +75,7 @@ class EventChartsView(APIView):
         event = get_owned_event_or_none(event_pk, request.user)
 
         if event is None:
-            return Response(
-                {
-                    "success": False,
-                    "message": "Event not found.",
-                    "errors": {"event": ["No event found with this ID."]},
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return _not_found_response()
 
         response_chart = get_event_response_chart_data(event)
         invitation_chart = get_event_invitation_chart_data(event)
@@ -122,7 +119,7 @@ class OrganizerOverviewView(APIView):
 
 
 class OrganizerInvitationDashboardView(APIView):
-    """Phase 25: return the full invitation-focused dashboard payload -
+    """Return the full invitation-focused dashboard payload -
     overview stats, channel performance, events needing attention, and
     quota usage - in one call."""
 

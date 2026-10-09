@@ -1,3 +1,4 @@
+# backend/memberships/views.py
 from rest_framework import status
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -5,7 +6,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import MembershipPlan
-from .topup_models import TopupPack
 from .serializers import (
     ChangePlanSerializer,
     MembershipPlanSerializer,
@@ -21,7 +21,29 @@ from .services import (
     get_organizer_template_count,
     subscribe_user_to_plan,
 )
+from .topup_models import TopupPack
 from .utils import get_effective_plan
+
+ERROR_STATUS_MAP = {
+    "plan_not_found": status.HTTP_404_NOT_FOUND,
+    "already_subscribed": status.HTTP_409_CONFLICT,
+    "no_active_subscription": status.HTTP_409_CONFLICT,
+    "same_plan": status.HTTP_409_CONFLICT,
+    "payment_required": status.HTTP_402_PAYMENT_REQUIRED,
+    "organizer_only": status.HTTP_403_FORBIDDEN,
+    "mobile_not_verified": status.HTTP_403_FORBIDDEN,
+}
+
+
+def _subscription_error_response(error: SubscriptionError) -> Response:
+    return Response(
+        {
+            "success": False,
+            "message": error.message,
+            "errors": {"plan_slug": [error.message]},
+        },
+        status=ERROR_STATUS_MAP.get(error.code, status.HTTP_400_BAD_REQUEST),
+    )
 
 
 class MembershipPlanListView(ListAPIView):
@@ -32,17 +54,10 @@ class MembershipPlanListView(ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        """Return only active plans."""
-
-        return MembershipPlan.objects.filter(
-            is_active=True
-        ).order_by("display_order", "price")
+        return MembershipPlan.objects.filter(is_active=True).order_by("display_order", "price")
 
     def list(self, request, *args, **kwargs):
-        """Return plans wrapped in the project's consistent response format."""
-
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
+        serializer = self.get_serializer(self.get_queryset(), many=True)
 
         return Response(
             {
@@ -60,34 +75,23 @@ class MembershipPlanDetailView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, slug):
-        """Return plan details for the given slug."""
-
-        plan = MembershipPlan.objects.filter(
-            slug=slug,
-            is_active=True,
-        ).first()
+        plan = MembershipPlan.objects.filter(slug=slug, is_active=True).first()
 
         if plan is None:
             return Response(
                 {
                     "success": False,
                     "message": "Membership plan not found.",
-                    "errors": {
-                        "plan": [
-                            "No active plan found with this slug."
-                        ]
-                    },
+                    "errors": {"plan": ["No active plan found with this slug."]},
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-        serializer = MembershipPlanSerializer(plan)
 
         return Response(
             {
                 "success": True,
                 "message": "Membership plan retrieved successfully.",
-                "data": serializer.data,
+                "data": MembershipPlanSerializer(plan).data,
             },
             status=status.HTTP_200_OK,
         )
@@ -99,152 +103,85 @@ class MySubscriptionView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """Return the logged-in user's active subscription, if any."""
-
         subscription = get_active_subscription(request.user)
 
         if subscription is None:
             return Response(
-                {
-                    "success": True,
-                    "message": "No active subscription found.",
-                    "data": None,
-                },
+                {"success": True, "message": "No active subscription found.", "data": None},
                 status=status.HTTP_200_OK,
             )
-
-        serializer = SubscriptionSerializer(subscription)
 
         return Response(
             {
                 "success": True,
                 "message": "Active subscription retrieved successfully.",
-                "data": serializer.data,
+                "data": SubscriptionSerializer(subscription).data,
             },
             status=status.HTTP_200_OK,
         )
 
 
 class SubscribeView(APIView):
-    """Subscribe the authenticated user to a membership plan."""
+    """Start a FREE membership plan (paid plans use payments checkout)."""
 
     permission_classes = [IsAuthenticated]
 
-    ERROR_STATUS_MAP = {
-        "plan_not_found": status.HTTP_404_NOT_FOUND,
-        "already_subscribed": status.HTTP_409_CONFLICT,
-        "payment_required": status.HTTP_402_PAYMENT_REQUIRED,
-    }
-
     def post(self, request):
-        """Create a new active subscription for the logged-in user."""
-
         serializer = SubscribeSerializer(data=request.data)
 
         if not serializer.is_valid():
             return Response(
-                {
-                    "success": False,
-                    "message": "Invalid request.",
-                    "errors": serializer.errors,
-                },
+                {"success": False, "message": "Invalid request.", "errors": serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        plan_slug = serializer.validated_data["plan_slug"]
 
         try:
             subscription = subscribe_user_to_plan(
                 user=request.user,
-                plan_slug=plan_slug,
+                plan_slug=serializer.validated_data["plan_slug"],
             )
-
         except SubscriptionError as error:
-            response_status = self.ERROR_STATUS_MAP.get(
-                error.code,
-                status.HTTP_400_BAD_REQUEST,
-            )
-
-            return Response(
-                {
-                    "success": False,
-                    "message": error.message,
-                    "errors": {"plan_slug": [error.message]},
-                },
-                status=response_status,
-            )
-
-        response_serializer = SubscriptionSerializer(subscription)
+            return _subscription_error_response(error)
 
         return Response(
             {
                 "success": True,
                 "message": "Subscribed successfully.",
-                "data": response_serializer.data,
+                "data": SubscriptionSerializer(subscription).data,
             },
             status=status.HTTP_201_CREATED,
         )
 
 
 class ChangePlanView(APIView):
-    """Upgrade or downgrade the authenticated user's active subscription."""
+    """Switch the active subscription to a FREE plan."""
 
     permission_classes = [IsAuthenticated]
 
-    ERROR_STATUS_MAP = {
-        "plan_not_found": status.HTTP_404_NOT_FOUND,
-        "no_active_subscription": status.HTTP_409_CONFLICT,
-        "same_plan": status.HTTP_409_CONFLICT,
-        "payment_required": status.HTTP_402_PAYMENT_REQUIRED,
-    }
-
     def post(self, request):
-        """Cancel the current subscription and start a new one on the given plan."""
-
         serializer = ChangePlanSerializer(data=request.data)
 
         if not serializer.is_valid():
             return Response(
-                {
-                    "success": False,
-                    "message": "Invalid request.",
-                    "errors": serializer.errors,
-                },
+                {"success": False, "message": "Invalid request.", "errors": serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        plan_slug = serializer.validated_data["plan_slug"]
 
         try:
             new_subscription, change_type = change_user_plan(
                 user=request.user,
-                new_plan_slug=plan_slug,
+                new_plan_slug=serializer.validated_data["plan_slug"],
             )
-
         except SubscriptionError as error:
-            response_status = self.ERROR_STATUS_MAP.get(
-                error.code,
-                status.HTTP_400_BAD_REQUEST,
-            )
-
-            return Response(
-                {
-                    "success": False,
-                    "message": error.message,
-                    "errors": {"plan_slug": [error.message]},
-                },
-                status=response_status,
-            )
-
-        response_serializer = SubscriptionSerializer(new_subscription)
+            return _subscription_error_response(error)
 
         return Response(
             {
                 "success": True,
-                "message": f"Plan {change_type} completed successfully.",
+                "message": "Your plan has been changed.",
                 "data": {
                     "change_type": change_type,
-                    "subscription": response_serializer.data,
+                    "subscription": SubscriptionSerializer(new_subscription).data,
                 },
             },
             status=status.HTTP_200_OK,
@@ -252,25 +189,11 @@ class ChangePlanView(APIView):
 
 
 class MyUsageView(APIView):
-    """Return the authenticated user's plan limits and feature access.
-
-    Phase 17: template_limit usage now reports the organizer's actual
-    OrganizerTemplateLibrary count (template_count / template_remaining)
-    instead of a static plan field, since template_limit is a count the
-    organizer consumes by adding templates to their library - mirroring
-    how invitations_used/invitations_remaining already work for the
-    shared invitation pool.
-
-    Phase 26: added invitations_topup/voice_calls_topup, reporting how
-    much of the organizer's current remaining quota came from a topup
-    purchase on top of their plan's base limit.
-    """
+    """The authenticated user's plan limits, usage and feature access."""
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """Return the logged-in user's effective plan limits and usage."""
-
         plan = get_effective_plan(request.user)
 
         if plan is None:
@@ -331,77 +254,57 @@ class MyUsageView(APIView):
                 "photographer_access_enabled": plan.photographer_access_enabled,
             }
 
-        serializer = MyUsageSerializer(data)
-
         return Response(
             {
                 "success": True,
                 "message": "Usage summary retrieved successfully.",
-                "data": serializer.data,
+                "data": MyUsageSerializer(data).data,
             },
             status=status.HTTP_200_OK,
         )
 
 
 class PortalAccessView(APIView):
-    """Check whether the authenticated user may enter the organizer portal.
+    """Can this user enter the organizer portal, and if not, what is the next step?
 
-    Requires both: verified email AND an active (paid or free) subscription.
-    Intended to be called by the frontend right after login/payment to
-    decide whether to route the user into the dashboard or back to an
-    onboarding step (verify email / choose a plan / pay).
+    Organizer: needs a verified mobile number AND an active plan.
+    Admin: always allowed (admins do not buy plans).
+    Anyone else (photographer ...): the organizer portal is not theirs.
     """
 
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        """Return whether the user can access the portal, and which step is blocking them."""
-
-        user = request.user
-
-        if not user.is_verified:
-            return Response(
-                {
-                    "success": True,
-                    "message": "Email verification required.",
-                    "data": {
-                        "can_access_portal": False,
-                        "next_step": "verify_mobile",
-                    },
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        subscription = get_active_subscription(user)
-
-        if subscription is None:
-            return Response(
-                {
-                    "success": True,
-                    "message": "An active membership plan is required.",
-                    "data": {
-                        "can_access_portal": False,
-                        "next_step": "select_plan",
-                    },
-                },
-                status=status.HTTP_200_OK,
-            )
-
+    @staticmethod
+    def _reply(message, can_access, next_step):
         return Response(
             {
                 "success": True,
-                "message": "Portal access granted.",
-                "data": {
-                    "can_access_portal": True,
-                    "next_step": None,
-                },
+                "message": message,
+                "data": {"can_access_portal": can_access, "next_step": next_step},
             },
             status=status.HTTP_200_OK,
         )
 
+    def get(self, request):
+        user = request.user
+
+        if user.role == "ADMIN":
+            return self._reply("Portal access granted.", True, None)
+
+        if user.role != "ORGANIZER":
+            return self._reply("This account does not use the organizer portal.", False, None)
+
+        if not user.is_verified:
+            return self._reply("Mobile verification required.", False, "verify_mobile")
+
+        if get_active_subscription(user) is None:
+            return self._reply("An active membership plan is required.", False, "select_plan")
+
+        return self._reply("Portal access granted.", True, None)
+
 
 class TopupPackListView(ListAPIView):
-    """Phase 26: list all active topup packs available for organizers to buy."""
+    """List all active topup packs available for organizers to buy."""
 
     serializer_class = TopupPackSerializer
     permission_classes = [IsAuthenticated]

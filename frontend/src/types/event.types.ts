@@ -40,6 +40,22 @@ export const EVENT_STATUS_OPTIONS: { value: EventStatus; label: string }[] = [
   { value: "COMPLETED", label: "Completed" },
 ];
 
+// Mirrors ALLOWED_STATUS_TRANSITIONS in backend/events/services.py.
+export const EVENT_STATUS_TRANSITIONS: Record<EventStatus, EventStatus[]> = {
+  DRAFT: ["PUBLISHED", "CANCELLED"],
+  PUBLISHED: ["DRAFT", "COMPLETED", "CANCELLED"],
+  COMPLETED: ["PUBLISHED"],
+  CANCELLED: ["DRAFT", "PUBLISHED"],
+};
+
+export function eventStatusLabel(status: EventStatus): string {
+  return EVENT_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+}
+
+// Cover image limits - mirrors the backend validators (5 MB, jpg/png/webp).
+export const EVENT_COVER_MAX_MB = 5;
+export const EVENT_COVER_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
 export interface Event {
   id: number;
   name: string;
@@ -64,12 +80,20 @@ export interface EventListItem {
   id: number;
   name: string;
   event_type: EventType;
+  custom_event_type_label?: string;
   event_date: string;
   event_time: string;
   event_end_time: string | null;
   venue_name: string;
   status: EventStatus;
   cover_image: string | null;
+}
+
+export interface EventListParams {
+  page?: number;
+  search?: string;
+  status?: EventStatus | "";
+  when?: "upcoming" | "past" | "";
 }
 
 export interface CreateEventPayload {
@@ -80,10 +104,11 @@ export interface CreateEventPayload {
   description?: string;
   event_date: string;
   event_time: string;
-  event_end_time?: string;
+  event_end_time?: string | null;
   venue_name?: string;
   address?: string;
   google_maps_link?: string;
+  // File = upload new, null = remove current, undefined = leave unchanged.
   cover_image?: File | null;
   status?: EventStatus;
 }

@@ -1,7 +1,7 @@
+# backend/users/serializers.py
+import re
+
 from django.contrib.auth.password_validation import validate_password
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import (
@@ -9,7 +9,56 @@ from rest_framework_simplejwt.serializers import (
     TokenRefreshSerializer,
 )
 
+from common.phone import canonical_mobile, clean_phone_text
+from common.validators import validate_image_file_size
+
 from .models import User
+from .services import get_user_by_mobile
+
+
+def _reject_impossible_indian_mobile(mobile: str) -> None:
+    """Indian mobile numbers start with 6, 7, 8 or 9, so a 10-digit number
+    (or +91 plus 10 digits) starting with anything else - like the classic
+    1234567890 - can never receive an SMS or call. Numbers from other
+    countries are left alone."""
+
+    digits = re.sub(r"\D", "", mobile)
+
+    if len(digits) == 12 and digits.startswith("91"):
+        national = digits[2:]
+    elif len(digits) == 10:
+        national = digits
+    else:
+        return
+
+    if national[0] not in "6789" or len(set(national)) == 1:
+        raise serializers.ValidationError("Enter a valid mobile number.")
+
+
+def _normalize_mobile_input(value: str) -> str:
+    """Accept 9188560170, +91 91885 60170, 09188560170 ... and return the
+    one canonical form stored on the user."""
+
+    cleaned = clean_phone_text(value)
+
+    if not cleaned:
+        raise serializers.ValidationError("Mobile number is required.")
+
+    if not re.fullmatch(r"\+?\d+", cleaned):
+        raise serializers.ValidationError(
+            "Mobile number must contain only digits (a leading + is allowed)."
+        )
+
+    mobile = canonical_mobile(cleaned)
+
+    if len(mobile) < 10 or len(mobile) > 15:
+        raise serializers.ValidationError(
+            "Mobile number must contain between 10 and 15 digits."
+        )
+
+    _reject_impossible_indian_mobile(mobile)
+
+    return mobile
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -28,13 +77,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         style={"input_type": "password"},
     )
 
-    # Optional at registration - defaults to ORGANIZER (the model field's
-    # own default) when omitted, so every existing caller of this endpoint
-    # keeps working unchanged. Deliberately restricted to ORGANIZER and
-    # PHOTOGRAPHER only: ADMIN accounts are never self-service (created via
-    # Django admin/createsuperuser only), and GUEST is not a login-capable
-    # role in this app (guests interact only through their response_token
-    # link, never through /auth/register/).
+    # Restricted to ORGANIZER and PHOTOGRAPHER: ADMIN accounts are never
+    # self-service (createsuperuser / Django admin only) and GUEST is not
+    # a login-capable role (guests use their response link).
     role = serializers.ChoiceField(
         choices=[
             (User.Role.ORGANIZER, User.Role.ORGANIZER.label),
@@ -55,21 +100,22 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             "role",
         )
 
-    def validate_full_name(self, value: str) -> str:
-        """Validate and normalize the user's full name."""
+        # The model's unique=True would add its own (differently worded)
+        # validators for these two; the methods below do the checks.
+        extra_kwargs = {
+            "email": {"validators": []},
+            "mobile_number": {"validators": []},
+        }
 
+    def validate_full_name(self, value: str) -> str:
         value = value.strip()
 
         if not value:
-            raise serializers.ValidationError(
-                "Full name is required."
-            )
+            raise serializers.ValidationError("Full name is required.")
 
         return value
 
     def validate_email(self, value: str) -> str:
-        """Validate and normalize email address."""
-
         value = value.strip().lower()
 
         if User.objects.filter(email__iexact=value).exists():
@@ -80,90 +126,57 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return value
 
     def validate_mobile_number(self, value: str) -> str:
-        """Validate and normalize mobile number."""
+        mobile = _normalize_mobile_input(value)
 
-        value = value.strip()
-
-        if not value:
-            raise serializers.ValidationError(
-                "Mobile number is required."
-            )
-
-        if not value.isdigit():
-            raise serializers.ValidationError(
-                "Mobile number must contain only digits."
-            )
-
-        if len(value) < 10 or len(value) > 15:
-            raise serializers.ValidationError(
-                "Mobile number must contain between 10 and 15 digits."
-            )
-
-        if User.objects.filter(
-            mobile_number=value
-        ).exists():
+        if get_user_by_mobile(mobile) is not None:
             raise serializers.ValidationError(
                 "A user with this mobile number already exists."
             )
 
-        return value
+        return mobile
 
     def validate_password(self, value: str) -> str:
-        """Validate password using Django's password validators."""
-
         validate_password(value)
 
         return value
 
     def validate(self, attrs: dict) -> dict:
-        """Validate password confirmation."""
-
         if attrs["password"] != attrs["password_confirm"]:
             raise serializers.ValidationError(
-                {
-                    "password_confirm": (
-                        "Passwords do not match."
-                    )
-                }
+                {"password_confirm": "Passwords do not match."}
             )
 
         return attrs
 
     def create(self, validated_data: dict) -> User:
-        """Create a user using the custom user manager."""
-
         validated_data.pop("password_confirm")
 
         password = validated_data.pop("password")
 
-        user = User.objects.create_user(
+        return User.objects.create_user(
             password=password,
             **validated_data,
         )
 
-        return user
-
 
 class UserLoginSerializer(TokenObtainPairSerializer):
-    """Serializer for mobile-number based JWT login."""
+    """Mobile-number based JWT login."""
 
     username_field = "mobile_number"
 
     def validate(self, attrs: dict) -> dict:
-        """Validate credentials and generate JWT tokens.
+        # Let people log in with 9188560170, +919188560170 and so on.
+        user = get_user_by_mobile(attrs.get("mobile_number", ""))
 
-        Phase 14 (Admin Portal): a user suspended by an admin must be
-        fully blocked from logging in, even with correct credentials.
-        This check runs AFTER super().validate() succeeds (so password
-        is already confirmed correct) but BEFORE any token data is
-        attached to the response, matching the "fully blocked from
-        login" decision for suspended accounts.
-        """
+        if user is not None:
+            attrs["mobile_number"] = user.mobile_number
 
         data = super().validate(attrs)
 
         user = self.user
 
+        # A suspended user is fully blocked even with the right password.
+        # The view turns this exact code into a clear 403 message.
         if user.is_suspended:
             raise AuthenticationFailed(
                 "Your account has been suspended. Please contact support.",
@@ -184,28 +197,48 @@ class UserLoginSerializer(TokenObtainPairSerializer):
 
 
 class UserTokenRefreshSerializer(TokenRefreshSerializer):
-    """Serializer for refreshing an access token."""
+    """Refresh an access token."""
 
     pass
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    """Serializer for requesting a password reset link by email."""
+    """Ask for a password-reset code by email or mobile number."""
 
-    email = serializers.EmailField(required=True)
+    identifier = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    mobile_number = serializers.CharField(required=False, allow_blank=True)
 
-    def validate_email(self, value: str) -> str:
-        """Normalize the email. Existence is intentionally not revealed here."""
+    def validate(self, attrs: dict) -> dict:
+        value = (
+            attrs.get("identifier")
+            or attrs.get("email")
+            or attrs.get("mobile_number")
+            or ""
+        ).strip()
 
-        return value.strip().lower()
+        if not value:
+            raise serializers.ValidationError(
+                {"identifier": "Enter your email or mobile number."}
+            )
+
+        attrs["identifier"] = value.lower() if "@" in value else value
+
+        return attrs
 
 
 class ResetPasswordSerializer(serializers.Serializer):
-    """Serializer for confirming a password reset using uid + token."""
+    """Set a new password using the code sent by SMS / email."""
 
-    uid = serializers.CharField(required=True)
+    identifier = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    mobile_number = serializers.CharField(required=False, allow_blank=True)
 
-    token = serializers.CharField(required=True)
+    code = serializers.RegexField(
+        r"^\d{6}$",
+        required=True,
+        error_messages={"invalid": "Enter the 6-digit code."},
+    )
 
     new_password = serializers.CharField(
         write_only=True,
@@ -221,106 +254,134 @@ class ResetPasswordSerializer(serializers.Serializer):
     )
 
     def validate_new_password(self, value: str) -> str:
-        """Validate password strength using Django's password validators."""
-
         validate_password(value)
 
         return value
 
     def validate(self, attrs: dict) -> dict:
-        """Validate uid/token pair and password confirmation."""
+        value = (
+            attrs.get("identifier")
+            or attrs.get("email")
+            or attrs.get("mobile_number")
+            or ""
+        ).strip()
+
+        if not value:
+            raise serializers.ValidationError(
+                {"identifier": "Enter your email or mobile number."}
+            )
 
         if attrs["new_password"] != attrs["new_password_confirm"]:
             raise serializers.ValidationError(
-                {
-                    "new_password_confirm": (
-                        "Passwords do not match."
-                    )
-                }
+                {"new_password_confirm": "Passwords do not match."}
             )
 
-        try:
-            user_id = force_str(
-                urlsafe_base64_decode(attrs["uid"])
-            )
-            user = User.objects.get(pk=user_id)
-
-        except (
-            User.DoesNotExist,
-            ValueError,
-            TypeError,
-            OverflowError,
-        ):
-            raise serializers.ValidationError(
-                {
-                    "uid": (
-                        "Invalid or expired reset link."
-                    )
-                }
-            )
-
-        token_generator = PasswordResetTokenGenerator()
-
-        if not token_generator.check_token(
-            user,
-            attrs["token"],
-        ):
-            raise serializers.ValidationError(
-                {
-                    "token": (
-                        "Invalid or expired reset link."
-                    )
-                }
-            )
-
-        attrs["user"] = user
+        attrs["identifier"] = value.lower() if "@" in value else value
 
         return attrs
 
-    def save(self) -> User:
-        """Set the new password on the resolved user."""
 
-        user = self.validated_data["user"]
+class ChangePasswordSerializer(serializers.Serializer):
+    """A logged-in user changes their own password."""
 
-        user.set_password(
-            self.validated_data["new_password"]
-        )
+    current_password = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={"input_type": "password"},
+    )
 
-        user.save(update_fields=["password"])
+    new_password = serializers.CharField(
+        write_only=True,
+        required=True,
+        min_length=8,
+        style={"input_type": "password"},
+    )
 
-        return user
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={"input_type": "password"},
+    )
+
+    def validate_current_password(self, value: str) -> str:
+        user = self.context["request"].user
+
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+
+        return value
+
+    def validate_new_password(self, value: str) -> str:
+        validate_password(value, user=self.context["request"].user)
+
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        if attrs["new_password"] != attrs["new_password_confirm"]:
+            raise serializers.ValidationError(
+                {"new_password_confirm": "Passwords do not match."}
+            )
+
+        if attrs["new_password"] == attrs["current_password"]:
+            raise serializers.ValidationError(
+                {"new_password": "The new password must be different from the current one."}
+            )
+
+        return attrs
+
+
+class UpdateProfileSerializer(serializers.Serializer):
+    """Fields a user can change on their own profile."""
+
+    full_name = serializers.CharField(required=False, max_length=150)
+
+    profile_image = serializers.ImageField(required=False)
+
+    def validate_full_name(self, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError("Full name cannot be empty.")
+
+        return value
+
+    def validate_profile_image(self, value):
+        validate_image_file_size(value, max_size_mb=5)
+
+        extension = value.name.rsplit(".", 1)[-1].lower() if "." in value.name else ""
+
+        if extension not in ("jpg", "jpeg", "png"):
+            raise serializers.ValidationError("Only JPG and PNG images are allowed.")
+
+        return value
 
 
 class VerifyMobileSerializer(serializers.Serializer):
-    """Serializer for confirming a user's mobile number using an OTP code."""
+    """Confirm a mobile number using an OTP code."""
 
     mobile_number = serializers.CharField(required=True)
 
-    code = serializers.CharField(
+    code = serializers.RegexField(
+        r"^\d{6}$",
         required=True,
-        min_length=6,
-        max_length=6,
+        error_messages={"invalid": "Enter the 6-digit code."},
     )
 
     def validate_mobile_number(self, value: str) -> str:
-        """Normalize the mobile number."""
-
         return value.strip()
 
 
 class ResendOTPSerializer(serializers.Serializer):
-    """Serializer for requesting a new mobile verification OTP."""
+    """Ask for a new mobile verification code."""
 
     mobile_number = serializers.CharField(required=True)
 
     def validate_mobile_number(self, value: str) -> str:
-        """Normalize the mobile number."""
-
         return value.strip()
 
 
 class UserLogoutSerializer(serializers.Serializer):
-    """Serializer for validating a refresh token during logout."""
+    """Validate a refresh token during logout."""
 
     refresh = serializers.CharField(
         required=True,

@@ -1,12 +1,13 @@
 from rest_framework import serializers
 
 from .models import Guest, GuestCategory
+from .phone import INVALID_MOBILE_MESSAGE, is_valid_guest_mobile, normalize_guest_mobile
 
 
 class GuestCategorySerializer(serializers.ModelSerializer):
     """Serializer for creating, updating, and reading an event's guest categories."""
 
-    guest_count = serializers.IntegerField(read_only=True, source="guests.count")
+    guest_count = serializers.SerializerMethodField()
 
     class Meta:
         model = GuestCategory
@@ -20,9 +21,14 @@ class GuestCategorySerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "guest_count", "created_at", "updated_at")
 
-    def validate_name(self, value: str) -> str:
-        """Validate and normalize the category name."""
+    def get_guest_count(self, obj: GuestCategory) -> int:
+        # The list view annotates `guest_total` (one query for all rows);
+        # single objects fall back to a count.
+        annotated = getattr(obj, "guest_total", None)
 
+        return annotated if annotated is not None else obj.guests.count()
+
+    def validate_name(self, value: str) -> str:
         value = value.strip()
 
         if not value:
@@ -81,7 +87,8 @@ class GuestSerializer(serializers.ModelSerializer):
         rank = {"SENT": 3, "CALLING": 2}
         result: dict[str, str] = {}
 
-        # notification_logs is ordered newest first (NotificationLog.Meta).
+        # notification_logs is ordered newest first (NotificationLog.Meta)
+        # and prefetched by the list view.
         for log in obj.notification_logs.all():
             current = result.get(log.channel)
 
@@ -91,51 +98,32 @@ class GuestSerializer(serializers.ModelSerializer):
         return result
 
     def validate_name(self, value: str) -> str:
-        """Validate and normalize the guest's name."""
-
         value = value.strip()
 
         if not value:
-            raise serializers.ValidationError(
-                "Guest name is required."
-            )
+            raise serializers.ValidationError("Guest name is required.")
 
         return value
 
     def validate_mobile_number(self, value: str) -> str:
-        """Validate and normalize the guest's mobile number."""
+        """Normalize to the stored form and check the length."""
 
-        value = value.strip()
+        value = normalize_guest_mobile(value)
 
         if not value:
-            raise serializers.ValidationError(
-                "Mobile number is required."
-            )
+            raise serializers.ValidationError("Mobile number is required.")
 
-        if not value.isdigit():
-            raise serializers.ValidationError(
-                "Mobile number must contain only digits."
-            )
-
-        if len(value) < 10 or len(value) > 15:
-            raise serializers.ValidationError(
-                "Mobile number must contain between 10 and 15 digits."
-            )
+        if not is_valid_guest_mobile(value):
+            raise serializers.ValidationError(INVALID_MOBILE_MESSAGE)
 
         return value
 
     def validate_email(self, value: str) -> str:
-        """Normalize the guest's email, if provided."""
-
         return value.strip().lower()
 
     def validate_family_member_count(self, value: int) -> int:
-        """Ensure family member count is a sane, non-negative number."""
-
         if value < 0:
-            raise serializers.ValidationError(
-                "Family member count cannot be negative."
-            )
+            raise serializers.ValidationError("Family member count cannot be negative.")
 
         if value > 50:
             raise serializers.ValidationError(
@@ -168,26 +156,21 @@ class CSVImportResultSerializer(serializers.Serializer):
 
     created_count = serializers.IntegerField()
     skipped_count = serializers.IntegerField()
-    skipped_rows = serializers.ListField(
-        child=serializers.DictField()
-    )
+    skipped_rows = serializers.ListField(child=serializers.DictField())
 
 
 # --------------------------------------------------
-# Contact Import (Phase 16)
+# Contact Import
 # --------------------------------------------------
 
 class ContactImportRowSerializer(serializers.Serializer):
     """One reviewed, editable row from the frontend's Contact Picker flow.
 
-    Mirrors GuestSerializer's validation rules exactly (same digit/length
-    rules for mobile_number, same email normalization) so a
-    contact-imported guest is held to the same standard as a
-    manually-added one.
+    Held to the same standard as a manually-added guest.
     """
 
     name = serializers.CharField(max_length=150)
-    mobile_number = serializers.CharField(max_length=20)
+    mobile_number = serializers.CharField(max_length=30)
     email = serializers.EmailField(required=False, allow_blank=True, default="")
     category = serializers.PrimaryKeyRelatedField(
         queryset=GuestCategory.objects.all(),
@@ -195,7 +178,9 @@ class ContactImportRowSerializer(serializers.Serializer):
         allow_null=True,
         default=None,
     )
-    family_member_count = serializers.IntegerField(required=False, default=3, min_value=0, max_value=50)
+    family_member_count = serializers.IntegerField(
+        required=False, default=3, min_value=0, max_value=50
+    )
 
     def validate_name(self, value: str) -> str:
         value = value.strip()
@@ -206,13 +191,10 @@ class ContactImportRowSerializer(serializers.Serializer):
         return value
 
     def validate_mobile_number(self, value: str) -> str:
-        value = value.strip()
+        value = normalize_guest_mobile(value)
 
-        if not value.isdigit():
-            raise serializers.ValidationError("Mobile number must contain only digits.")
-
-        if len(value) < 10 or len(value) > 15:
-            raise serializers.ValidationError("Mobile number must contain between 10 and 15 digits.")
+        if not is_valid_guest_mobile(value):
+            raise serializers.ValidationError(INVALID_MOBILE_MESSAGE)
 
         return value
 
@@ -242,6 +224,4 @@ class ContactImportResultSerializer(serializers.Serializer):
 
     created_count = serializers.IntegerField()
     skipped_count = serializers.IntegerField()
-    skipped_rows = serializers.ListField(
-        child=serializers.DictField()
-    )
+    skipped_rows = serializers.ListField(child=serializers.DictField())

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Check, Clock, ImageIcon, LayoutTemplate, Palette, Pencil, Plus, Sparkles, Type, X } from "lucide-react";
+import { Check, Clock, ImageIcon, LayoutTemplate, Palette, Pencil, Plus, Search, Sparkles, Trash2, Type, X } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -10,10 +10,12 @@ import { Label } from "@/components/ui/label";
 import {
   useActiveFilledTemplate,
   useActiveTemplatePreview,
+  useDeleteCustomTemplateMutation,
   useDeselectActiveTemplateMutation,
   useEventStandardDefaults,
   useFillActiveTemplateMutation,
   useInvitationTemplates,
+  useTemplateUsage,
 } from "@/queries/useInvitationQueries";
 import { useEvents } from "@/queries/useEventQueries";
 import { resolveMediaUrl } from "@/lib/media";
@@ -39,13 +41,48 @@ type FillStep = "pick-event" | "fill-fields";
 const prettifyKey = (key: string) =>
   key.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
+/** Escape closes the dialog and the page behind it stops scrolling. */
+function useDialogBehaviour(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const previousOverflow = document.body.style.overflow;
+
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+}
+
 export default function InvitationTemplates() {
   const { data: templates, isLoading, isError } = useInvitationTemplates();
   const { data: activeTemplate, isLoading: activeLoading } = useActiveFilledTemplate();
+  const { data: usage } = useTemplateUsage();
   const deselectMutation = useDeselectActiveTemplateMutation();
+  const deleteMutation = useDeleteCustomTemplateMutation();
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [fillingTemplate, setFillingTemplate] = useState<InvitationTemplate | null>(null);
+  const [removingTemplate, setRemovingTemplate] = useState<InvitationTemplate | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const limitReached =
+    !!usage && usage.template_limit !== null && usage.template_count >= usage.template_limit;
+
+  const handleRemove = () => {
+    if (!removingTemplate) return;
+    setRemoveError(null);
+
+    deleteMutation.mutate(removingTemplate.id, {
+      onSuccess: () => setRemovingTemplate(null),
+      onError: (error) => setRemoveError(getApiErrorMessage(error, "Couldn't remove this template.")),
+    });
+  };
 
   const activeTemplateDefinition =
     templates?.find((template) => template.id === activeTemplate?.template) ?? null;
@@ -65,8 +102,16 @@ export default function InvitationTemplates() {
               Select a template and fill it in once for an event. Then go to the Guests page,
               choose how to send (WhatsApp, Email, SMS or Voice Call) and send.
             </p>
+            {usage && (
+              <p className={cn("mt-2 text-xs", limitReached ? "text-amber-700" : "text-slate-400")}>
+                {usage.template_limit === null
+                  ? `${usage.template_count} template${usage.template_count === 1 ? "" : "s"} in your library`
+                  : `${usage.template_count} of ${usage.template_limit} template slots used`}
+                {limitReached && " · remove one of your uploads or upgrade to add more"}
+              </p>
+            )}
           </div>
-          <Button onClick={() => setUploadOpen(true)}>
+          <Button className="w-full sm:w-auto" onClick={() => setUploadOpen(true)}>
             <Plus className="h-4 w-4" />
             Upload template
           </Button>
@@ -170,6 +215,7 @@ export default function InvitationTemplates() {
                         <img
                           src={previewUrl}
                           alt={template.name}
+                          loading="lazy"
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -202,6 +248,19 @@ export default function InvitationTemplates() {
                       >
                         {isActive ? "Edit filled details" : "Select & fill"}
                       </Button>
+                      {template.is_custom && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRemoveError(null);
+                            setRemovingTemplate(template);
+                          }}
+                          className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Remove my upload
+                        </button>
+                      )}
                     </div>
                   </Card>
                 </motion.div>
@@ -212,6 +271,17 @@ export default function InvitationTemplates() {
       </div>
 
       <UploadTemplateDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+
+      {removingTemplate && (
+        <RemoveTemplateDialog
+          template={removingTemplate}
+          isActive={activeTemplate?.template === removingTemplate.id}
+          isRemoving={deleteMutation.isPending}
+          errorMessage={removeError}
+          onConfirm={handleRemove}
+          onClose={() => setRemovingTemplate(null)}
+        />
+      )}
 
       {fillingTemplate && (
         <FillTemplateDialog
@@ -224,6 +294,66 @@ export default function InvitationTemplates() {
           onClose={() => setFillingTemplate(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Remove one of the organizer's own uploads
+// ---------------------------------------------------------------------
+
+function RemoveTemplateDialog({
+  template,
+  isActive,
+  isRemoving,
+  errorMessage,
+  onConfirm,
+  onClose,
+}: {
+  template: InvitationTemplate;
+  isActive: boolean;
+  isRemoving: boolean;
+  errorMessage: string | null;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  useDialogBehaviour(onClose);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:px-4">
+      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-template-title"
+        className="premium-card relative w-full max-w-md rounded-b-none p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-b-[inherit] sm:p-6"
+      >
+        <h2 id="remove-template-title" className="text-lg font-bold text-[var(--brand-navy)]">
+          Remove "{template.name}"?
+        </h2>
+        <p className="mt-2 text-sm text-slate-500">
+          This frees up a template slot.
+          {isActive && " It is your active template, so it will be deselected too."} Invitations
+          you already sent are not affected.
+        </p>
+
+        {errorMessage && <FormError message={errorMessage} />}
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row">
+          <Button variant="outline" className="flex-1" onClick={onClose} disabled={isRemoving}>
+            Keep it
+          </Button>
+          <Button
+            className="flex-1 !bg-rose-600 hover:!bg-rose-700"
+            onClick={onConfirm}
+            isLoading={isRemoving}
+          >
+            <Trash2 className="h-4 w-4" />
+            Remove
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -388,7 +518,18 @@ function FillTemplateDialog({
 }) {
   useInvitationFonts();
 
-  const { data: eventsPage, isLoading: eventsLoading } = useEvents(1);
+  const [eventSearch, setEventSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(eventSearch.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [eventSearch]);
+
+  const { data: eventsPage, isLoading: eventsLoading } = useEvents({
+    page: 1,
+    search: debouncedSearch,
+  });
 
   // Editing an existing fill skips straight to the form with its values.
   const [step, setStep] = useState<FillStep>(initial ? "fill-fields" : "pick-event");
@@ -431,6 +572,8 @@ function FillTemplateDialog({
     );
   }, [defaults, eventId, initial]);
 
+  useDialogBehaviour(onClose);
+
   const handlePickEvent = (id: number) => {
     setEventId(id);
     setStep("fill-fields");
@@ -467,15 +610,18 @@ function FillTemplateDialog({
   const confirmed = confirmedActive !== null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:px-4">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
 
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Fill in ${template.name}`}
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.15 }}
         className={cn(
-          "premium-card relative max-h-[92vh] w-full overflow-y-auto p-5 sm:p-8",
+          "premium-card relative max-h-[92dvh] w-full overflow-y-auto rounded-b-none p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-b-[inherit] sm:p-8",
           !confirmed && step === "fill-fields" ? "max-w-4xl" : "max-w-lg"
         )}
       >
@@ -495,7 +641,7 @@ function FillTemplateDialog({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -508,9 +654,24 @@ function FillTemplateDialog({
 
         {!confirmed && step === "pick-event" && (
           <div className="mt-6">
+            <div className="relative mb-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={eventSearch}
+                onChange={(e) => setEventSearch(e.target.value)}
+                placeholder="Search your events"
+                aria-label="Search your events"
+                className="pl-9"
+              />
+            </div>
+
             {eventsLoading && <p className="text-sm text-slate-400">Loading your events...</p>}
 
-            {!eventsLoading && events.length === 0 && (
+            {!eventsLoading && events.length === 0 && debouncedSearch && (
+              <p className="text-sm text-slate-500">No events match "{debouncedSearch}".</p>
+            )}
+
+            {!eventsLoading && events.length === 0 && !debouncedSearch && (
               <div className="rounded-2xl bg-amber-50 p-4">
                 <p className="text-sm text-amber-800">
                   You don't have any events yet. Create one first.
@@ -531,13 +692,15 @@ function FillTemplateDialog({
                     key={event.id}
                     type="button"
                     onClick={() => handlePickEvent(event.id)}
-                    className="flex w-full items-center justify-between rounded-2xl border border-slate-200 p-3.5 text-left hover:border-[var(--brand-pink)]"
+                    className="flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 p-3.5 text-left hover:border-[var(--brand-pink)]"
                   >
-                    <div>
-                      <p className="font-medium text-[var(--brand-navy)]">{event.name}</p>
-                      <p className="text-xs text-slate-500">{event.venue_name || "No venue set"}</p>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-[var(--brand-navy)]">{event.name}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {event.venue_name || "No venue set"}
+                      </p>
                     </div>
-                    <span className="text-xs text-slate-400">{event.event_date}</span>
+                    <span className="shrink-0 text-xs text-slate-400">{event.event_date}</span>
                   </button>
                 ))}
               </div>
@@ -621,6 +784,7 @@ function FillTemplateDialog({
                             key={option.value}
                             type="button"
                             onClick={() => setStandard("font_style", option.value)}
+                            aria-pressed={isSelected}
                             className={cn(
                               "rounded-2xl border px-3 py-3 text-center transition-colors",
                               isSelected
@@ -669,7 +833,7 @@ function FillTemplateDialog({
                           aria-label={preset.label}
                           onClick={() => setStandard("text_color", preset.value)}
                           className={cn(
-                            "h-8 w-8 rounded-full border-2 transition-transform hover:scale-110",
+                            "h-9 w-9 rounded-full border-2 transition-transform [@media(hover:hover)]:hover:scale-110",
                             textColor.toLowerCase() === preset.value.toLowerCase()
                               ? "border-[var(--brand-pink)] ring-2 ring-[var(--brand-pink)]/30"
                               : "border-slate-200"
@@ -679,7 +843,7 @@ function FillTemplateDialog({
                       ))}
 
                       <label
-                        className="relative flex h-8 cursor-pointer items-center gap-2 rounded-full border border-dashed border-slate-300 px-3 text-xs font-semibold text-slate-500 hover:border-slate-400"
+                        className="relative flex h-9 cursor-pointer items-center gap-2 rounded-full border border-dashed border-slate-300 px-3 text-xs font-semibold text-slate-500 hover:border-slate-400"
                         title="Pick any colour"
                       >
                         <span
@@ -756,8 +920,8 @@ function FillTemplateDialog({
                     textColor={textColor}
                   />
                   <p className="mt-2 text-xs text-slate-400">
-                    Close to the final card. After you confirm, the exact card is drawn and shown on
-                    this page.
+                    "Guest Name" is a sample. When you send, each guest's own name is written at the
+                    top of their card automatically ("Hi Rahul,", "Hi Aisha,"...).
                   </p>
                 </div>
               </div>
@@ -868,16 +1032,15 @@ function LiveCardPreview({
         ) : (
           <>
             <p
-              className="font-semibold uppercase"
+              style={{ fontFamily: bodyFamily, fontSize: "4.2cqw", fontWeight: 600 }}
+            >
+              Hi Guest Name,
+            </p>
+            <p
+              className="mt-[2%] font-semibold uppercase"
               style={{ fontFamily: "'Montserrat', sans-serif", fontSize: "2.4cqw", letterSpacing: "0.3em" }}
             >
               You are invited
-            </p>
-            <p
-              className="mt-[3%]"
-              style={{ fontFamily: bodyFamily, fontSize: "4.2cqw", fontWeight: 600 }}
-            >
-              Dear Guest Name,
             </p>
             <p
               className="mt-[3%] leading-tight"

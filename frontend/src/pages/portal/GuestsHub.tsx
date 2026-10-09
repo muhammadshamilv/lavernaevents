@@ -1,5 +1,13 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarPlus, ChevronRight, Image as ImageIcon, Users } from "lucide-react";
+import {
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  Image as ImageIcon,
+  Search,
+  Users,
+} from "lucide-react";
 import { useEvents } from "@/queries/useEventQueries";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,11 +20,25 @@ import { resolveMediaUrl } from "@/lib/media";
 // so this page's only job is "pick which event's guests you want to
 // manage" and hand off to that event's real guest page.
 export default function GuestsHub() {
-  const { data, isLoading, isError } = useEvents(1);
+  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const { data, isLoading, isError } = useEvents({ page, search });
   const events = data?.events ?? [];
+  const pagination = data?.pagination;
 
   return (
-    <div className="px-4 py-8 sm:px-6 sm:py-10 lg:px-10">
+    <div className="mobile-safe-bottom px-4 py-8 sm:px-6 sm:py-10 lg:px-10">
       <div className="mx-auto max-w-3xl">
         <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-pink)]">
           Guests
@@ -27,6 +49,18 @@ export default function GuestsHub() {
         <p className="mt-2 text-sm text-slate-500">
           Every guest list belongs to a specific event - pick one below.
         </p>
+
+        <div className="relative mt-5">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search your events"
+            aria-label="Search events"
+            className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-[var(--brand-navy)] placeholder:text-slate-400 focus:border-[var(--brand-pink)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-pink)]/40"
+          />
+        </div>
 
         {isError && (
           <p className="mt-10 text-center text-sm text-rose-600">
@@ -48,7 +82,13 @@ export default function GuestsHub() {
           </div>
         )}
 
-        {!isLoading && !isError && events.length === 0 && (
+        {!isLoading && !isError && events.length === 0 && search && (
+          <p className="mt-10 text-center text-sm text-slate-500">
+            No events match "{search}".
+          </p>
+        )}
+
+        {!isLoading && !isError && events.length === 0 && !search && (
           <Card className="mt-8 p-10 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
               <CalendarPlus className="h-6 w-6" />
@@ -72,7 +112,7 @@ export default function GuestsHub() {
               const coverUrl = resolveMediaUrl(event.cover_image);
 
               return (
-                <Link key={event.id} to={`/portal/events/${event.id}/guests`}>
+                <Link key={event.id} to={`/portal/events/${event.id}/guests`} className="block">
                   <Card className="card-hover-lift flex items-center gap-3 p-4">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
                       {coverUrl ? (
@@ -86,7 +126,7 @@ export default function GuestsHub() {
                         {event.name}
                       </p>
                       <p className="mt-0.5 truncate text-xs text-slate-500">
-                        {eventTypeLabel(event.event_type)} · {formatEventDate(event.event_date)}
+                        {eventTypeLabel(event.event_type, event.custom_event_type_label)} · {formatEventDate(event.event_date)}
                       </p>
                     </div>
                     <span className="flex items-center gap-1.5 shrink-0 text-sm font-medium text-[var(--brand-pink)]">
@@ -97,6 +137,34 @@ export default function GuestsHub() {
                 </Link>
               );
             })}
+          </div>
+        )}
+
+        {pagination && pagination.total_pages > 1 && (
+          <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+            <span>
+              Page {pagination.current_page} of {pagination.total_pages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={!pagination.previous}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((prev) => prev + 1)}
+                disabled={!pagination.next}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Next page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

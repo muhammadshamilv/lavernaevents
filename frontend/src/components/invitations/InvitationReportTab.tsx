@@ -38,7 +38,7 @@ const RESPONSE_BADGE_CLASS: Record<string, string> = {
 
 function SendSummaryTable({ summary }: { summary: SendSummary }) {
   return (
-    <table className="w-full text-left text-sm">
+    <table className="w-full min-w-[300px] text-left text-sm">
       <thead>
         <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
           <th className="py-2 pr-4">Channel</th>
@@ -65,7 +65,7 @@ function SendSummaryTable({ summary }: { summary: SendSummary }) {
 
 function RsvpSummaryTable({ summary }: { summary: RsvpSummary }) {
   return (
-    <table className="w-full text-left text-sm">
+    <table className="w-full min-w-[260px] text-left text-sm">
       <thead>
         <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
           <th className="py-2 pr-4">Response</th>
@@ -135,7 +135,9 @@ export default function InvitationReportTab({ eventId }: { eventId: number }) {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(objectUrl);
+      // Revoking straight away can cancel the download in Safari / some
+      // mobile browsers; give the browser a moment to start it.
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
     } catch (error) {
       toastStore.show(getApiErrorMessage(error, "Couldn't download the report."), "error");
     } finally {
@@ -207,51 +209,92 @@ export default function InvitationReportTab({ eventId }: { eventId: number }) {
         <div className="border-b border-slate-100 p-4 sm:p-5">
           <h3 className="font-semibold text-[var(--brand-navy)]">Guest Detail Log</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                <th className="px-4 py-3 sm:px-6">Guest</th>
-                <th className="px-4 py-3 sm:px-6">Category</th>
-                <th className="px-4 py-3 sm:px-6">Invitation</th>
-                <th className="px-4 py-3 sm:px-6">Response</th>
-                <th className="px-4 py-3 sm:px-6">Channels</th>
-                <th className="px-4 py-3 sm:px-6">Reminders</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+
+        {report.guest_details.length === 0 ? (
+          <p className="p-6 text-center text-sm text-slate-500">
+            No guests have been added to this event yet.
+          </p>
+        ) : (
+          <>
+            {/* Phones: one card per guest - a 6-column table is unreadable at 360px. */}
+            <ul className="divide-y divide-slate-100 sm:hidden">
               {report.guest_details.map((row) => (
-                <tr key={row.guest_id} className="transition-colors hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-[var(--brand-navy)] sm:px-6">
-                    {row.guest_name}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 sm:px-6">
-                    {row.category_name ?? "Uncategorized"}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 sm:px-6">
-                    {row.invitation_status.replace("_", " ")}
-                  </td>
-                  <td className="px-4 py-3 sm:px-6">
+                <li key={row.guest_id} className="space-y-1.5 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 break-words font-medium text-[var(--brand-navy)]">
+                      {row.guest_name}
+                    </p>
                     <span
                       className={cn(
-                        "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
+                        "inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold",
                         RESPONSE_BADGE_CLASS[row.response_status]
                       )}
                     >
                       {RESPONSE_LABEL[row.response_status]}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 sm:px-6">
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {row.category_name ?? "Uncategorized"} &middot; Invitation{" "}
+                    {row.invitation_status.replace(/_/g, " ").toLowerCase()}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Channels:{" "}
                     {row.channels_used.length > 0
                       ? row.channels_used.map((c) => CHANNEL_LABEL[c]).join(", ")
-                      : "-"}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 sm:px-6">{row.reminders_sent}</td>
-                </tr>
+                      : "-"}{" "}
+                    &middot; Reminders: {row.reminders_sent}
+                  </p>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <th scope="col" className="px-4 py-3 sm:px-6">Guest</th>
+                    <th scope="col" className="px-4 py-3 sm:px-6">Category</th>
+                    <th scope="col" className="px-4 py-3 sm:px-6">Invitation</th>
+                    <th scope="col" className="px-4 py-3 sm:px-6">Response</th>
+                    <th scope="col" className="px-4 py-3 sm:px-6">Channels</th>
+                    <th scope="col" className="px-4 py-3 sm:px-6">Reminders</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {report.guest_details.map((row) => (
+                    <tr key={row.guest_id} className="[@media(hover:hover)]:hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-[var(--brand-navy)] sm:px-6">
+                        {row.guest_name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 sm:px-6">
+                        {row.category_name ?? "Uncategorized"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 sm:px-6">
+                        {row.invitation_status.replace(/_/g, " ")}
+                      </td>
+                      <td className="px-4 py-3 sm:px-6">
+                        <span
+                          className={cn(
+                            "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold",
+                            RESPONSE_BADGE_CLASS[row.response_status]
+                          )}
+                        >
+                          {RESPONSE_LABEL[row.response_status]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 sm:px-6">
+                        {row.channels_used.length > 0
+                          ? row.channels_used.map((c) => CHANNEL_LABEL[c]).join(", ")
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 sm:px-6">{row.reminders_sent}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );

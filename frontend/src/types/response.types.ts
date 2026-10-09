@@ -21,6 +21,9 @@ export interface InvitationPublicDetails {
   accent_color: string;
   response_status: GuestResponseStatus;
   already_responded: boolean;
+  /** False once the organizer cancelled or completed the event. */
+  responses_open: boolean;
+  is_cancelled: boolean;
   /** .ics file for Apple / Outlook calendars. */
   calendar_url: string;
   /** Opens Google Calendar with the event already filled in. */

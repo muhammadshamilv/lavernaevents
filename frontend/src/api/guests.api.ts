@@ -19,7 +19,8 @@ export interface GuestsQueryParams {
   search?: string;
   response_status?: ResponseStatus;
   invitation_status?: InvitationStatus;
-  category?: number;
+  // A category id, or "uncategorized" for guests without one.
+  category?: number | "uncategorized";
 }
 
 export interface GuestsPage {

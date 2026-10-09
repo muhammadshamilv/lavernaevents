@@ -22,8 +22,10 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 // never accidentally change how development works.
 // ---------------------------------------------------------------------
 
+// In a production build, fall back to "/api" (the Pages Function proxy) when
+// VITE_API_BASE_URL was not set, instead of silently calling localhost.
 const configuredBase: string | undefined = import.meta.env.PROD
-  ? import.meta.env.VITE_API_BASE_URL
+  ? import.meta.env.VITE_API_BASE_URL || "/api"
   : undefined;
 
 const configuredOrigin: string | undefined = import.meta.env.PROD
@@ -95,6 +97,10 @@ interface RetriableRequestConfig extends InternalAxiosRequestConfig {
 const NO_REFRESH_PATHS = [
   "/auth/login/",
   "/auth/register/",
+  "/auth/verify-mobile/",
+  "/auth/resend-otp/",
+  "/auth/forgot-password/",
+  "/auth/reset-password/",
   "/auth/refresh/",
   "/auth/logout/",
 ];
@@ -105,14 +111,19 @@ function shouldSkipRefresh(url?: string): boolean {
 }
 
 let isRefreshing = false;
-let refreshWaiters: Array<(success: boolean) => void> = [];
+type RefreshResult = "ok" | "expired" | "error";
 
-function notifyWaiters(success: boolean) {
-  refreshWaiters.forEach((resolve) => resolve(success));
+let refreshWaiters: Array<(result: RefreshResult) => void> = [];
+
+function notifyWaiters(result: RefreshResult) {
+  refreshWaiters.forEach((resolve) => resolve(result));
   refreshWaiters = [];
 }
 
-async function refreshSession(): Promise<boolean> {
+// "expired" = the server refused the refresh cookie (really logged out).
+// "error"   = network drop, 429 rate limit, 5xx: the session may be fine, so
+//             the caller must NOT sign the user out because of it.
+async function refreshSession(): Promise<RefreshResult> {
   if (isRefreshing) {
     return new Promise((resolve) => {
       refreshWaiters.push(resolve);
@@ -120,6 +131,7 @@ async function refreshSession(): Promise<boolean> {
   }
 
   isRefreshing = true;
+  let result: RefreshResult = "ok";
 
   try {
     await axios.post(
@@ -127,14 +139,15 @@ async function refreshSession(): Promise<boolean> {
       {},
       { withCredentials: true }
     );
-    notifyWaiters(true);
-    return true;
-  } catch {
-    notifyWaiters(false);
-    return false;
+  } catch (error) {
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    result = status === 401 || status === 403 ? "expired" : "error";
   } finally {
     isRefreshing = false;
   }
+
+  notifyWaiters(result);
+  return result;
 }
 
 let sessionExpiredHandler: (() => void) | null = null;
@@ -158,11 +171,13 @@ apiClient.interceptors.response.use(
 
       const refreshed = await refreshSession();
 
-      if (refreshed) {
+      if (refreshed === "ok") {
         return apiClient(originalRequest);
       }
 
-      sessionExpiredHandler?.();
+      if (refreshed === "expired") {
+        sessionExpiredHandler?.();
+      }
     }
 
     return Promise.reject(error);

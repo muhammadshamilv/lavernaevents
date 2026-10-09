@@ -1,6 +1,8 @@
 from datetime import timedelta
 
 from celery import shared_task
+from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -40,9 +42,19 @@ def send_due_reminders():
 
     now = timezone.now()
 
-    candidates = Guest.objects.filter(
-        response_status=Guest.ResponseStatus.PENDING,
-    ).select_related("event", "event__organizer", "category")
+    # Only guests that can possibly have a schedule (their own, or via their
+    # category) on events that are still running - not every guest on the
+    # platform on every tick.
+    candidates = (
+        Guest.objects.filter(
+            Q(reminder_schedules__is_active=True)
+            | Q(category__reminder_schedules__is_active=True),
+            response_status=Guest.ResponseStatus.PENDING,
+        )
+        .exclude(event__status__in=["CANCELLED", "COMPLETED"])
+        .select_related("event", "event__organizer", "category")
+        .distinct()
+    )
 
     sent_count = 0
     queued_count = 0
@@ -112,12 +124,20 @@ def send_due_reminders():
             continue
 
         try:
-            send_reminder_to_guest(
-                event=guest.event,
-                guest=guest,
-                organizer=organizer,
-                channel=original_send.channel,
-            )
+            # Lock the guest row for the send, so two overlapping runs can't
+            # both remind the same guest. A row another run holds is skipped.
+            with transaction.atomic():
+                locked = Guest.objects.select_for_update(skip_locked=True).filter(pk=guest.pk).first()
+
+                if locked is None:
+                    continue
+
+                send_reminder_to_guest(
+                    event=guest.event,
+                    guest=locked,
+                    organizer=organizer,
+                    channel=original_send.channel,
+                )
             sent_count += 1
 
         except (InvitationError, NotificationError):

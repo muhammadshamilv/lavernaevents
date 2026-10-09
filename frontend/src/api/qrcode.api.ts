@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { API_BASE_URL, apiClient } from "./client";
 import type { ApiResponse } from "@/types/api.types";
 import type { EventQRCode, ScannedEvent, SelfieMatchResult } from "@/types/qrcode.types";
 
@@ -17,13 +17,21 @@ export async function getEventQRCode(eventId: number): Promise<EventQRCode> {
   return response.data.data;
 }
 
-/** PNG/PDF downloads are plain authenticated GETs that return the file
- * bytes directly - not JSON - so they're fetched as a blob and handed to
- * the browser as a download, rather than exposed as a clickable <a href>
- * pointing straight at the backend (an <a> would not carry the
- * cookie-based auth the same way a same-origin fetch through apiClient
- * does, and would also bypass the axios refresh-token interceptor if the
- * access token had just expired). */
+/** Switch the event's QR code off (guests then see "not active") or on. */
+export async function setEventQRCodeActive(
+  eventId: number,
+  isActive: boolean
+): Promise<EventQRCode> {
+  const response = await apiClient.patch<ApiResponse<EventQRCode>>(
+    `/events/${eventId}/qr-code/`,
+    { is_active: isActive }
+  );
+  return response.data.data;
+}
+
+/** PNG/PDF downloads return file bytes, not JSON, so they are fetched as a
+ * blob through apiClient (which carries the cookie auth and the refresh-
+ * token interceptor) and handed to the browser as a download. */
 export async function downloadEventQRCodeFile(
   eventId: number,
   format: "png" | "pdf"
@@ -51,4 +59,12 @@ export async function matchSelfie(token: string, selfie: File): Promise<SelfieMa
     MULTIPART_CONFIG
   );
   return response.data.data;
+}
+
+/** The backend returns `download_url` as "/api/qr/<token>/media/<id>/download/".
+ * In production the site proxies /api to the backend, in development the
+ * API lives on another port - so build the link from the same base the
+ * rest of the app uses. A plain <a href> to it downloads the file. */
+export function getGuestMediaDownloadHref(downloadUrl: string): string {
+  return `${API_BASE_URL}${downloadUrl.replace(/^\/api/, "")}`;
 }

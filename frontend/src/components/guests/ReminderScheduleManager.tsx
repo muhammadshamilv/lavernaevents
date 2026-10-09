@@ -50,8 +50,8 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
       return;
     }
     const hours = Number(delayHours);
-    if (!hours || hours <= 0) {
-      toastStore.show("Enter a delay greater than 0 hours.", "error");
+    if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
+      toastStore.show("Enter a whole number of hours between 1 and 720.", "error");
       return;
     }
 
@@ -120,7 +120,11 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
       {adding && (
         <div className="mt-3 flex flex-wrap items-end gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-3">
           <div className="min-w-[160px] flex-1">
-            <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <Select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              aria-label="Category"
+            >
               <option value="">Choose category</option>
               {(categories ?? []).map((category) => (
                 <option key={category.id} value={category.id}>
@@ -132,7 +136,11 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
           <div className="w-28">
             <Input
               type="number"
+              inputMode="numeric"
               min={1}
+              max={720}
+              step={1}
+              aria-label="Hours after the invitation is sent"
               value={delayHours}
               onChange={(e) => setDelayHours(e.target.value)}
               placeholder="Hours"
@@ -144,7 +152,7 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
           <button
             type="button"
             onClick={() => setAdding(false)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
             aria-label="Cancel"
           >
             <X className="h-4 w-4" />
@@ -158,11 +166,11 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
             <div
               key={schedule.id}
               className={cn(
-                "flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm",
+                "flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm",
                 !schedule.is_active && "opacity-50"
               )}
             >
-              <span className="font-medium text-[var(--brand-navy)]">
+              <span className="min-w-0 font-medium text-[var(--brand-navy)]">
                 {schedule.category_name}
                 <span className="ml-2 font-normal text-slate-500">
                   reminds after {schedule.delay_hours}h
@@ -171,7 +179,7 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
               <button
                 type="button"
                 onClick={() => setDeleteTarget(schedule)}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                 aria-label="Remove schedule"
               >
                 <Trash2 className="h-3.5 w-3.5" />

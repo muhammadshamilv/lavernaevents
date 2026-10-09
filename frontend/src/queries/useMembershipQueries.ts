@@ -65,6 +65,10 @@ export function usePortalAccess() {
     queryFn: getPortalAccess,
     enabled: !!user,
     retry: false,
+    // Never trust a cached "select_plan" answer: it was true before the
+    // user paid and would bounce them back to /pricing.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 
@@ -75,7 +79,9 @@ export function useSubscribeMutation() {
     mutationFn: (planSlug: string) => subscribeToPlan(planSlug),
     onSuccess: (subscription) => {
       queryClient.setQueryData(membershipKeys.mySubscription, subscription);
-      queryClient.invalidateQueries({ queryKey: membershipKeys.portalAccess });
+      // removeQueries (not invalidate): an inactive query would keep serving
+      // its old "select_plan" answer to PortalLayout until the refetch ends.
+      queryClient.removeQueries({ queryKey: membershipKeys.portalAccess });
       queryClient.invalidateQueries({ queryKey: membershipKeys.myUsage });
     },
   });
@@ -88,7 +94,7 @@ export function useChangePlanMutation() {
     mutationFn: (planSlug: string) => changePlan(planSlug),
     onSuccess: (result) => {
       queryClient.setQueryData(membershipKeys.mySubscription, result.subscription);
-      queryClient.invalidateQueries({ queryKey: membershipKeys.portalAccess });
+      queryClient.removeQueries({ queryKey: membershipKeys.portalAccess });
       queryClient.invalidateQueries({ queryKey: membershipKeys.myUsage });
     },
   });

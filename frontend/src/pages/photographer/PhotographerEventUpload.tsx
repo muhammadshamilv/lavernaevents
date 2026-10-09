@@ -6,44 +6,28 @@ import { Card } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyPhotographerEvents } from "@/queries/usePhotographerQueries";
-import { useEventGallery, useUploadGalleryMediaMutation } from "@/queries/useGalleryQueries";
+import { useEventGallery } from "@/queries/useGalleryQueries";
 import { formatEventDate, formatEventTime } from "@/lib/eventDisplay";
-import { resolveMediaUrl } from "@/lib/media";
-import { getApiErrorMessage } from "@/lib/apiError";
+import MediaGrid from "@/components/gallery/MediaGrid";
+import MediaLightbox from "@/components/gallery/MediaLightbox";
+import UploadQueuePanel from "@/components/gallery/UploadQueuePanel";
+import { GALLERY_ACCEPT, useUploadQueue } from "@/components/gallery/useUploadQueue";
 
 export default function PhotographerEventUpload() {
   const { id } = useParams<{ id: string }>();
   const eventId = id ? Number(id) : undefined;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reuses the same "my granted events" list to get this event's display
-  // details (name/date/venue) rather than fetching the full organizer
-  // Event object, which this account has no permission to read directly -
-  // a photographer's access is scoped to the gallery endpoint only, not
-  // GET /events/:id/.
+  // A photographer cannot read GET /events/:id/, so the event details come
+  // from their "my events" list (only currently valid grants are listed).
   const { data: grants, isLoading: grantsLoading } = useMyPhotographerEvents();
   const grant = grants?.find((g) => g.event.id === eventId);
 
-  const { data: media, isLoading: mediaLoading } = useEventGallery(eventId);
-  const uploadMutation = useUploadGalleryMediaMutation(eventId);
+  const gallery = useEventGallery(grant ? eventId : undefined);
+  const media = gallery.data;
+  const queue = useUploadQueue(grant ? eventId : undefined);
 
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  const handleFilesSelected = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setUploadError(null);
-
-    Array.from(files).forEach((file) => {
-      uploadMutation.mutate(
-        { file },
-        {
-          onError: (err) => {
-            setUploadError(getApiErrorMessage(err, `Couldn't upload ${file.name}.`));
-          },
-        }
-      );
-    });
-  };
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   if (grantsLoading) {
     return (
@@ -59,12 +43,9 @@ export default function PhotographerEventUpload() {
       <div className="mx-auto max-w-md px-4 py-16 text-center">
         <Card className="p-8">
           <p className="text-sm text-slate-500">
-            You don't have access to this event, or it doesn't exist.
+            You don't have access to this event. It may not exist, or your access may have been removed or expired.
           </p>
-          <Link
-            to="/photographer"
-            className={buttonVariants({ variant: "outline", className: "mt-6" })}
-          >
+          <Link to="/photographer" className={buttonVariants({ variant: "outline", className: "mt-6" })}>
             Back to my events
           </Link>
         </Card>
@@ -83,61 +64,43 @@ export default function PhotographerEventUpload() {
           Back to my events
         </Link>
 
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="mt-4"
-        >
-          <h1 className="text-xl font-bold text-[var(--brand-navy)] sm:text-2xl">
-            {grant.event.name}
-          </h1>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mt-4">
+          <h1 className="text-xl font-bold text-[var(--brand-navy)] sm:text-2xl">{grant.event.name}</h1>
           <p className="mt-1 text-sm text-slate-500">
             {formatEventDate(grant.event.event_date)} · {formatEventTime(grant.event.event_time)}
           </p>
 
-          {!grant.is_currently_valid && (
-            <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
-              Your access to this event has been revoked or has expired. You can
-              still view what you've uploaded, but new uploads are disabled.
-            </div>
-          )}
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-[var(--brand-navy)]">{gallery.totalCount} uploaded</p>
 
-          <div className="mt-5 flex items-center justify-between">
-            <p className="text-sm font-semibold text-[var(--brand-navy)]">
-              {media?.length ?? 0} uploaded
-            </p>
-
-            {grant.is_currently_valid && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handleFilesSelected(e.target.files)}
-                />
-                <Button
-                  size="sm"
-                  isLoading={uploadMutation.isPending}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <ImagePlus className="h-4 w-4" />
-                  Upload
-                </Button>
-              </>
-            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={GALLERY_ACCEPT}
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                queue.add(e.target.files);
+                // Lets the same file be picked again after a failure.
+                e.target.value = "";
+              }}
+            />
+            <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+              <ImagePlus className="h-4 w-4" />
+              Upload
+            </Button>
           </div>
 
-          {uploadError && (
-            <p className="mt-3 text-sm text-rose-600" role="alert">
-              {uploadError}
-            </p>
-          )}
+          <UploadQueuePanel
+            items={queue.items}
+            onRetry={queue.retry}
+            onRetryAll={queue.retryAllFailed}
+            onRemove={queue.remove}
+            onClear={queue.clearFinished}
+          />
 
           <div className="mt-4">
-            {mediaLoading && (
+            {gallery.isLoading && (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {[1, 2, 3].map((n) => (
                   <Skeleton key={n} className="aspect-square w-full rounded-2xl" />
@@ -145,7 +108,13 @@ export default function PhotographerEventUpload() {
               </div>
             )}
 
-            {!mediaLoading && (!media || media.length === 0) && (
+            {gallery.isError && (
+              <Card className="p-6 text-center text-sm text-rose-600">
+                Couldn't load the gallery. Your access may have ended.
+              </Card>
+            )}
+
+            {!gallery.isLoading && !gallery.isError && (!media || media.length === 0) && (
               <Card className="p-10 text-center">
                 <span
                   className="mx-auto flex h-12 w-12 items-center justify-center rounded-full"
@@ -159,39 +128,31 @@ export default function PhotographerEventUpload() {
               </Card>
             )}
 
-            {!mediaLoading && media && media.length > 0 && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {media.map((item) => {
-                  const fileUrl = resolveMediaUrl(item.file);
-                  const thumbUrl = resolveMediaUrl(item.thumbnail);
+            {media && media.length > 0 && (
+              <>
+                <MediaGrid items={media} onOpen={setViewerIndex} className="grid grid-cols-2 gap-3 sm:grid-cols-3" />
 
-                  return (
-                    <div
-                      key={item.id}
-                      className="aspect-square overflow-hidden rounded-2xl bg-slate-100"
-                    >
-                      {item.media_type === "IMAGE" ? (
-                        <img
-                          src={fileUrl ?? ""}
-                          alt={item.caption || "Uploaded item"}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <video
-                          src={fileUrl ?? ""}
-                          poster={thumbUrl ?? undefined}
-                          className="h-full w-full object-cover"
-                          muted
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                {gallery.hasNextPage && (
+                  <div className="mt-5 text-center">
+                    <Button variant="outline" isLoading={gallery.isFetchingNextPage} onClick={() => gallery.fetchNextPage()}>
+                      Load more
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </motion.div>
       </div>
+
+      {viewerIndex !== null && media && (
+        <MediaLightbox
+          items={media}
+          index={Math.min(viewerIndex, media.length - 1)}
+          onIndexChange={setViewerIndex}
+          onClose={() => setViewerIndex(null)}
+        />
+      )}
     </div>
   );
 }

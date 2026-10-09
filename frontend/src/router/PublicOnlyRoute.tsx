@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/auth.store";
+import { homePathForRole } from "@/lib/roleHome";
 
 interface PublicOnlyRouteProps {
   children: ReactNode;
@@ -17,8 +18,10 @@ export default function PublicOnlyRoute({ children }: PublicOnlyRouteProps) {
     );
   }
 
-  if (user) {
-    return <Navigate to={user.role === "PHOTOGRAPHER" ? "/photographer" : "/"} replace />;
+  // A signed-in but unverified user is allowed to see /login again
+  // (e.g. to switch account); everyone else goes to their own portal.
+  if (user && (user.is_verified || user.role === "ADMIN")) {
+    return <Navigate to={homePathForRole(user.role)} replace />;
   }
 
   return <>{children}</>;

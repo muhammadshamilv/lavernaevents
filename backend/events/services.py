@@ -1,7 +1,15 @@
+import logging
+from datetime import date
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils import timezone
 from memberships.utils import LimitExceededError, check_event_limit
 
 from .models import Event
+
+logger = logging.getLogger(__name__)
 
 
 class EventError(Exception):
@@ -11,6 +19,29 @@ class EventError(Exception):
         self.message = message
         self.code = code
         super().__init__(message)
+
+
+# Which status an event may move to from each status. Creating always starts
+# at DRAFT or PUBLISHED (enforced in the serializer).
+ALLOWED_STATUS_TRANSITIONS = {
+    Event.Status.DRAFT: {Event.Status.PUBLISHED, Event.Status.CANCELLED},
+    Event.Status.PUBLISHED: {
+        Event.Status.DRAFT,
+        Event.Status.COMPLETED,
+        Event.Status.CANCELLED,
+    },
+    Event.Status.COMPLETED: {Event.Status.PUBLISHED},
+    Event.Status.CANCELLED: {Event.Status.DRAFT, Event.Status.PUBLISHED},
+}
+
+
+def today() -> date:
+    """Today's date in the project time zone."""
+
+    if settings.USE_TZ:
+        return timezone.localdate()
+
+    return date.today()
 
 
 def get_organizer_event_count(organizer) -> int:
@@ -23,38 +54,55 @@ def get_organizer_event_count(organizer) -> int:
     ).count()
 
 
-def create_event(organizer, validated_data: dict) -> Event:
-    """Create a new event for the organizer, enforcing their plan's event limit.
+def _lock_organizer(organizer):
+    """Row-lock the organizer so two simultaneous requests cannot both pass
+    the plan's event-limit check."""
 
-    Raises EventError if the organizer's plan does not allow another event.
+    user_model = get_user_model()
 
-    Phase 15: immediately seeds the platform's default guest categories
-    (Family, Friends, Relatives, Special Guest, VIP) on the new event, so
-    the organizer has a sensible starting point to assign guests to
-    without having to create categories by hand first. Wrapped in the
-    same atomic block as event creation - if seeding somehow failed, the
-    event creation rolls back with it rather than leaving a category-less
-    event behind.
-    """
+    return user_model.objects.select_for_update().get(pk=organizer.pk)
 
-    current_count = get_organizer_event_count(organizer)
 
+def _enforce_event_limit(organizer) -> None:
     try:
-        check_event_limit(organizer, current_count)
+        check_event_limit(organizer, get_organizer_event_count(organizer))
 
     except LimitExceededError as error:
         raise EventError(error.message, code=error.code)
 
+
+def _delete_stored_file(storage, name) -> None:
+    """Best-effort removal of a file from storage (never breaks a request)."""
+
+    if not name:
+        return
+
+    try:
+        storage.delete(name)
+
+    except Exception:  # noqa: BLE001 - storage errors must not fail the API call
+        logger.warning("Could not delete stored file %s", name, exc_info=True)
+
+
+def create_event(organizer, validated_data: dict) -> Event:
+    """Create a new event for the organizer, enforcing their plan's event limit.
+
+    The organizer row is locked for the duration of the check + insert, so
+    parallel requests cannot exceed the plan limit. Default guest categories
+    are seeded in the same transaction.
+    """
+
     with transaction.atomic():
+        locked_organizer = _lock_organizer(organizer)
+
+        _enforce_event_limit(locked_organizer)
+
         event = Event.objects.create(
-            organizer=organizer,
+            organizer=locked_organizer,
             **validated_data,
         )
 
-        # Local import avoids a circular import at module load time
-        # (guests/services.py does not import from events, so this is
-        # safe, but importing lazily here keeps events/ from ever having
-        # a hard top-level dependency on guests/).
+        # Local import avoids a circular import at module load time.
         from guests.services import seed_default_categories
 
         seed_default_categories(event)
@@ -63,17 +111,49 @@ def create_event(organizer, validated_data: dict) -> Event:
 
 
 def update_event(event: Event, validated_data: dict) -> Event:
-    """Apply partial updates to an existing event."""
+    """Apply partial updates to an existing event.
 
-    for field, value in validated_data.items():
-        setattr(event, field, value)
+    * Re-activating a CANCELLED event counts against the plan limit again,
+      so cancelling + creating + un-cancelling cannot bypass it.
+    * A replaced / removed cover image is deleted from storage.
+    """
 
-    event.save()
+    old_status = event.status
+    new_status = validated_data.get("status", old_status)
+
+    old_cover_name = event.cover_image.name if event.cover_image else None
+    storage = event.cover_image.storage
+
+    with transaction.atomic():
+        if (
+            old_status == Event.Status.CANCELLED
+            and new_status != Event.Status.CANCELLED
+        ):
+            locked_organizer = _lock_organizer(event.organizer)
+            _enforce_event_limit(locked_organizer)
+
+        for field, value in validated_data.items():
+            setattr(event, field, value)
+
+        event.save()
+
+    if "cover_image" in validated_data:
+        new_cover_name = event.cover_image.name if event.cover_image else None
+
+        if old_cover_name and old_cover_name != new_cover_name:
+            _delete_stored_file(storage, old_cover_name)
 
     return event
 
 
 def delete_event(event: Event) -> None:
-    """Permanently delete an event."""
+    """Permanently delete an event (guests, invitations etc. cascade) and its
+    cover image file."""
 
-    event.delete()
+    cover_name = event.cover_image.name if event.cover_image else None
+    storage = event.cover_image.storage
+
+    with transaction.atomic():
+        event.delete()
+
+    _delete_stored_file(storage, cover_name)

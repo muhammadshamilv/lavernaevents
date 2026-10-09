@@ -1,5 +1,6 @@
 # backend/users/models.py
-import random
+import secrets
+from datetime import timedelta
 
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.core.validators import FileExtensionValidator
@@ -62,12 +63,10 @@ class User(AbstractBaseUser, PermissionsMixin):
         default=False,
     )
 
-    # Phase 14 (Admin Portal) - set by an admin via the User Management
-    # "Suspend" action. Checked in UserLoginSerializer.validate() to fully
-    # block login (separate from is_active, which Django's own auth system
-    # also uses -- keeping a distinct flag means "admin suspended this
-    # account" is never confused with any other is_active-driven behavior
-    # elsewhere in the codebase).
+    # Set by an admin via the User Management "Suspend" action. Checked at
+    # login, on every authenticated request and on token refresh, so a
+    # suspended user is locked out immediately (separate from is_active,
+    # which Django's own auth system also uses).
     is_suspended = models.BooleanField(
         default=False,
         help_text="Set by an admin to block this user from logging in.",
@@ -99,7 +98,17 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class MobileOTP(models.Model):
-    """A one-time password sent to a user's mobile number for verification purposes."""
+    """A one-time code sent to a user (SMS / email) for one purpose:
+    verifying the mobile number after registration, or resetting a
+    forgotten password."""
+
+    class Purpose(models.TextChoices):
+        VERIFY_MOBILE = "VERIFY_MOBILE", "Verify mobile number"
+        RESET_PASSWORD = "RESET_PASSWORD", "Reset password"
+
+    # A code is dead after this many wrong guesses (stops brute-forcing
+    # the 1,000,000 possible codes during the validity window).
+    MAX_ATTEMPTS = 5
 
     user = models.ForeignKey(
         User,
@@ -107,8 +116,18 @@ class MobileOTP(models.Model):
         related_name="mobile_otps",
     )
 
+    purpose = models.CharField(
+        max_length=20,
+        choices=Purpose.choices,
+        default=Purpose.VERIFY_MOBILE,
+    )
+
     code = models.CharField(
         max_length=6,
+    )
+
+    attempts = models.PositiveSmallIntegerField(
+        default=0,
     )
 
     is_used = models.BooleanField(
@@ -126,32 +145,42 @@ class MobileOTP(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"OTP for {self.user.mobile_number}"
+        return f"{self.purpose} OTP for {self.user.mobile_number}"
 
     @staticmethod
     def generate_code() -> str:
-        """Generate a random 6-digit numeric code."""
+        """A random 6-digit code from the operating system's secure
+        random source (not the predictable `random` module)."""
 
-        return f"{random.randint(0, 999999):06d}"
+        return f"{secrets.randbelow(1_000_000):06d}"
 
     @classmethod
-    def create_for_user(cls, user: User, validity_minutes: int = 10) -> "MobileOTP":
-        """Create a new OTP for the user, invalidating any previous unused OTPs."""
+    def create_for_user(
+        cls,
+        user: User,
+        purpose: str = "VERIFY_MOBILE",
+        validity_minutes: int = 10,
+    ) -> "MobileOTP":
+        """Create a new OTP, retiring any unused OTPs of the SAME purpose."""
 
         cls.objects.filter(
             user=user,
+            purpose=purpose,
             is_used=False,
         ).update(is_used=True)
 
         return cls.objects.create(
             user=user,
+            purpose=purpose,
             code=cls.generate_code(),
-            expires_at=timezone.now() + timezone.timedelta(
-                minutes=validity_minutes
-            ),
+            expires_at=timezone.now() + timedelta(minutes=validity_minutes),
         )
 
     def is_valid(self) -> bool:
-        """Check whether this OTP is still usable."""
+        """True while the code is unused, unexpired and not locked out."""
 
-        return not self.is_used and timezone.now() <= self.expires_at
+        return (
+            not self.is_used
+            and timezone.now() <= self.expires_at
+            and self.attempts < self.MAX_ATTEMPTS
+        )

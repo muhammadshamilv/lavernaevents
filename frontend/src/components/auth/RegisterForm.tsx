@@ -64,7 +64,9 @@ export default function RegisterForm() {
         // for an organizer who arrived from the pricing page - is never
         // forwarded for a photographer signup.
         const planParam = values.role === "ORGANIZER" && planSlug ? `&plan=${planSlug}` : "";
-        navigate(`/verify-mobile?mobile=${user.mobile_number}${planParam}`);
+        navigate(
+          `/verify-mobile?mobile=${encodeURIComponent(user.mobile_number)}&sent=1${planParam}`
+        );
       },
       onError: (error) => {
         const fieldErrors = getApiFieldErrors(error);
@@ -81,7 +83,7 @@ export default function RegisterForm() {
     <form className="space-y-5" onSubmit={handleSubmit(onSubmit)} noValidate>
       <div className="space-y-1.5">
         <Label>I'm signing up as</Label>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2">
           {ROLE_OPTIONS.map((option) => (
             <button
               key={option.value}
@@ -112,7 +114,7 @@ export default function RegisterForm() {
 
       <div className="space-y-1.5">
         <Label htmlFor="full_name">Full name</Label>
-        <Input id="full_name" placeholder="Jane Doe" hasError={!!errors.full_name} {...register("full_name")} />
+        <Input id="full_name" autoComplete="name" placeholder="Jane Doe" hasError={!!errors.full_name} {...register("full_name")} />
         <FormError message={errors.full_name?.message} />
       </div>
 
@@ -121,6 +123,7 @@ export default function RegisterForm() {
         <Input
           id="email"
           type="email"
+          autoComplete="email"
           placeholder="jane@example.com"
           hasError={!!errors.email}
           {...register("email")}
@@ -132,8 +135,10 @@ export default function RegisterForm() {
         <Label htmlFor="mobile_number">Mobile number</Label>
         <Input
           id="mobile_number"
-          inputMode="numeric"
-          placeholder="9876543210"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          placeholder="9876543210 or +91 98765 43210"
           hasError={!!errors.mobile_number}
           {...register("mobile_number")}
         />
@@ -145,6 +150,7 @@ export default function RegisterForm() {
           <Label htmlFor="password">Password</Label>
           <PasswordInput
             id="password"
+            autoComplete="new-password"
             placeholder="••••••••"
             hasError={!!errors.password}
             {...register("password")}
@@ -156,6 +162,7 @@ export default function RegisterForm() {
           <Label htmlFor="password_confirm">Confirm password</Label>
           <PasswordInput
             id="password_confirm"
+            autoComplete="new-password"
             placeholder="••••••••"
             hasError={!!errors.password_confirm}
             {...register("password_confirm")}
@@ -163,6 +170,10 @@ export default function RegisterForm() {
           <FormError message={errors.password_confirm?.message} />
         </div>
       </div>
+
+      <p className="-mt-2 text-xs text-slate-500">
+        Use at least 8 characters, and not only numbers.
+      </p>
 
       {registerMutation.isError && (
         <FormError message={getApiErrorMessage(registerMutation.error, "Registration failed. Please try again.")} />

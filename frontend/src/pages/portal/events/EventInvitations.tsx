@@ -20,6 +20,7 @@ import {
 } from "@/queries/useNotificationQueries";
 import InvitationReportTab from "@/components/invitations/InvitationReportTab";
 import { toastStore } from "@/stores/toast.store";
+import { navigateWhatsAppWindow, openPendingWhatsAppWindow } from "@/lib/whatsapp";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, FormError } from "@/components/ui/card";
@@ -27,6 +28,18 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { InvitationStatus } from "@/types/invitation.types";
 import type { NotificationLog, NotificationStatus } from "@/types/notification.types";
+
+const INVITATION_STATUS_LABEL: Record<InvitationStatus, string> = {
+  GENERATED: "Ready",
+  FAILED: "Failed",
+};
+
+const LOG_STATUS_LABEL: Record<NotificationStatus, string> = {
+  LINK_GENERATED: "Awaiting confirmation",
+  SENT: "Sent",
+  FAILED: "Failed",
+  CALLING: "Calling",
+};
 
 const INVITATION_STATUS_BADGE_CLASS: Record<InvitationStatus, string> = {
   GENERATED: "badge-success",
@@ -54,6 +67,17 @@ function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatDateTimeWithClock(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 type Tab = "invitations" | "logs" | "report";
@@ -107,10 +131,12 @@ export default function EventInvitations() {
           Invitations
         </h1>
 
-        <div className="mt-4 flex gap-1 rounded-full bg-slate-100 p-1 sm:inline-flex sm:gap-2 sm:bg-transparent sm:p-0 sm:border-b sm:border-slate-100">
+        <div role="tablist" aria-label="Invitation sections" className="mt-4 flex gap-1 rounded-full bg-slate-100 p-1 sm:inline-flex sm:gap-2 sm:bg-transparent sm:p-0 sm:border-b sm:border-slate-100">
           <button
             type="button"
             onClick={() => setTab("invitations")}
+            role="tab"
+            aria-selected={tab === "invitations"}
             className={cn(
               "flex-1 rounded-full px-3 py-2 text-sm font-medium transition-colors sm:flex-none sm:rounded-none sm:border-b-2 sm:px-3 sm:py-2",
               tab === "invitations"
@@ -123,6 +149,8 @@ export default function EventInvitations() {
           <button
             type="button"
             onClick={() => setTab("logs")}
+            role="tab"
+            aria-selected={tab === "logs"}
             className={cn(
               "flex-1 rounded-full px-3 py-2 text-sm font-medium transition-colors sm:flex-none sm:rounded-none sm:border-b-2 sm:px-3 sm:py-2",
               tab === "logs"
@@ -135,6 +163,8 @@ export default function EventInvitations() {
           <button
             type="button"
             onClick={() => setTab("report")}
+            role="tab"
+            aria-selected={tab === "report"}
             className={cn(
               "flex-1 rounded-full px-3 py-2 text-sm font-medium transition-colors sm:flex-none sm:rounded-none sm:border-b-2 sm:px-3 sm:py-2",
               tab === "report"
@@ -224,7 +254,7 @@ function InvitationsTab({ eventId }: { eventId: number }) {
                         INVITATION_STATUS_BADGE_CLASS[invitation.status]
                       )}
                     >
-                      {invitation.status}
+                      {INVITATION_STATUS_LABEL[invitation.status]}
                     </span>
                   </td>
                 </tr>
@@ -251,7 +281,7 @@ function InvitationsTab({ eventId }: { eventId: number }) {
                     INVITATION_STATUS_BADGE_CLASS[invitation.status]
                   )}
                 >
-                  {invitation.status}
+                  {INVITATION_STATUS_LABEL[invitation.status]}
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-400">
@@ -295,9 +325,25 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
 
   const handleRetry = (log: NotificationLog) => {
     setActionError(null);
+
+    // WhatsApp opens on this device: open the tab during the click, then
+    // point it at the link once the server has built it.
+    const popup = log.channel === "WHATSAPP" ? openPendingWhatsAppWindow() : null;
+
     retryMutation.mutate(log.id, {
-      onSuccess: () => toastStore.show("Retry completed."),
-      onError: (error) => setActionError(getApiErrorMessage(error, "Retry failed.")),
+      onSuccess: (newLog) => {
+        if (popup && newLog.wa_link) {
+          if (!navigateWhatsAppWindow(popup, newLog.wa_link)) {
+            toastStore.show("Your browser blocked the WhatsApp window. Allow pop-ups for this site.", "error");
+          }
+        } else {
+          toastStore.show("Sent again.");
+        }
+      },
+      onError: (error) => {
+        popup?.close();
+        setActionError(getApiErrorMessage(error, "Retry failed."));
+      },
     });
   };
 
@@ -312,7 +358,7 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
           <Button
             size="sm"
             onClick={() => handleMarkSent(log)}
-            isLoading={markSentMutation.isPending}
+            isLoading={markSentMutation.isPending && markSentMutation.variables === log.id}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
             Mark as sent
@@ -330,7 +376,12 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
 
     if (log.status === "FAILED") {
       return (
-        <Button size="sm" variant="outline" onClick={() => handleRetry(log)} isLoading={retryMutation.isPending}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => handleRetry(log)}
+          isLoading={retryMutation.isPending && retryMutation.variables === log.id}
+        >
           <RefreshCw className="h-3.5 w-3.5" />
           Retry
         </Button>
@@ -381,7 +432,7 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
                 <th className="px-6 py-3">Guest</th>
                 <th className="px-6 py-3">Channel</th>
                 <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Sent</th>
+                <th className="px-6 py-3">When</th>
                 <th className="px-6 py-3">Actions</th>
               </tr>
             </thead>
@@ -404,13 +455,13 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
                         LOG_STATUS_BADGE_CLASS[log.status]
                       )}
                     >
-                      {log.status}
+                      {LOG_STATUS_LABEL[log.status]}
                     </span>
                     {log.status === "FAILED" && log.failure_reason && (
                       <p className="mt-1 max-w-xs text-xs text-rose-500">{log.failure_reason}</p>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-slate-600">{formatDateTime(log.created_at)}</td>
+                  <td className="px-6 py-4 text-slate-600">{formatDateTimeWithClock(log.created_at)}</td>
                   <td className="px-6 py-4">{renderActions(log)}</td>
                 </tr>
               ))}
@@ -437,13 +488,13 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
                     LOG_STATUS_BADGE_CLASS[log.status]
                   )}
                 >
-                  {log.status}
+                  {LOG_STATUS_LABEL[log.status]}
                 </span>
               </div>
               {log.status === "FAILED" && log.failure_reason && (
                 <p className="mt-2 text-xs text-rose-500">{log.failure_reason}</p>
               )}
-              <p className="mt-2 text-xs text-slate-400">{formatDateTime(log.created_at)}</p>
+              <p className="mt-2 text-xs text-slate-400">{formatDateTimeWithClock(log.created_at)}</p>
               {renderActions(log) && <div className="mt-3">{renderActions(log)}</div>}
             </Card>
           ))}

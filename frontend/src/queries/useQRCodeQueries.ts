@@ -1,13 +1,15 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   downloadEventQRCodeFile,
   getEventQRCode,
   getScannedEvent,
   matchSelfie,
+  setEventQRCodeActive,
 } from "@/api/qrcode.api";
 
 export const qrCodeKeys = {
   event: (eventId: number) => ["qr-code", "event", eventId] as const,
+  preview: (eventId: number) => ["qr-code", "preview", eventId] as const,
   scanned: (token: string) => ["qr-code", "scanned", token] as const,
 };
 
@@ -16,6 +18,21 @@ export function useEventQRCode(eventId?: number) {
     queryKey: qrCodeKeys.event(eventId ?? 0),
     queryFn: () => getEventQRCode(eventId as number),
     enabled: typeof eventId === "number",
+    // A plan without QR codes answers 402/403 - retrying cannot help.
+    retry: false,
+  });
+}
+
+/** The PNG shown on the QR page - the very file the "Download PNG" button
+ * saves, so the preview is exactly what gets printed. Only fetched once
+ * the QR code itself loaded (i.e. the plan allows it). */
+export function useEventQRCodePreview(eventId: number | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: qrCodeKeys.preview(eventId ?? 0),
+    queryFn: () => downloadEventQRCodeFile(eventId as number, "png"),
+    enabled: enabled && typeof eventId === "number",
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 }
 
@@ -26,10 +43,20 @@ export function useDownloadEventQRCodeMutation() {
   });
 }
 
+export function useSetQRCodeActiveMutation(eventId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (isActive: boolean) => setEventQRCodeActive(eventId, isActive),
+    onSuccess: (qrCode) => {
+      queryClient.setQueryData(qrCodeKeys.event(eventId), qrCode);
+    },
+  });
+}
+
 /** Public, guest-facing: loads the event info for the /scan/:token
- * landing page. No `enabled` gate on a truthy user needed here (unlike
- * the organizer queries above) since this route has no auth at all -
- * `token` coming from the URL param is the only precondition. */
+ * landing page. The route has no auth at all, so the URL token is the only
+ * precondition. */
 export function useScannedEvent(token?: string) {
   return useQuery({
     queryKey: qrCodeKeys.scanned(token ?? ""),

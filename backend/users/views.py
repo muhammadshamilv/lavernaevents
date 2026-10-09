@@ -1,34 +1,65 @@
+# backend/users/views.py
 from django.conf import settings
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.core.mail import send_mail
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
-
-from rest_framework import serializers, status
+from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import RefreshToken
-
-from decouple import config
 
 from .models import User
 from .serializers import (
+    ChangePasswordSerializer,
     ForgotPasswordSerializer,
     ResendOTPSerializer,
     ResetPasswordSerializer,
+    UpdateProfileSerializer,
     UserLoginSerializer,
     UserRegistrationSerializer,
     UserTokenRefreshSerializer,
     VerifyMobileSerializer,
 )
-from .services import send_verification_otp, verify_otp_code
+from .services import (
+    RESEND_COOLDOWN_SECONDS,
+    OTPThrottled,
+    describe_delivery,
+    get_user_by_mobile,
+    request_password_reset,
+    reset_password_with_otp,
+    revoke_user_sessions,
+    send_verification_otp,
+    verify_otp_code,
+)
+
+
+def _user_payload(user: User, request=None) -> dict:
+    """The user fields the frontend needs."""
+
+    profile_image = ""
+
+    if user.profile_image:
+        try:
+            url = user.profile_image.url
+            profile_image = request.build_absolute_uri(url) if request else url
+        except ValueError:
+            profile_image = ""
+
+    return {
+        "id": user.id,
+        "full_name": user.full_name,
+        "email": user.email,
+        "mobile_number": user.mobile_number,
+        "role": user.role,
+        "is_verified": user.is_verified,
+        "is_active": user.is_active,
+        "profile_image": profile_image,
+    }
 
 
 def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
-    """Attach the access and refresh tokens to the response as httpOnly cookies."""
+    """Attach the access and refresh tokens as httpOnly cookies."""
 
     access_lifetime = settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"]
     refresh_lifetime = settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"]
@@ -55,53 +86,46 @@ def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
 
 
 def _clear_auth_cookies(response: Response) -> None:
-    """Remove the access and refresh token cookies from the client."""
-
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
 
 
+def _error(message: str, errors: dict, http_status: int) -> Response:
+    return Response(
+        {"success": False, "message": message, "errors": errors},
+        status=http_status,
+    )
+
+
 class UserRegistrationView(APIView):
-    """Register a new LavernaEvents user."""
+    """Register a new LavernaEvents user and send the verification code."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Create a new user account."""
-
-        serializer = UserRegistrationSerializer(
-            data=request.data
-        )
+        serializer = UserRegistrationSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Registration failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return _error(
+                "Registration failed.",
+                serializer.errors,
+                status.HTTP_400_BAD_REQUEST,
             )
 
         user = serializer.save()
 
-        send_verification_otp(user)
+        otp = send_verification_otp(user)
 
         return Response(
             {
                 "success": True,
                 "message": (
                     "User registered successfully. "
-                    "A verification code has been sent to your mobile number."
+                    f"A verification code has been {describe_delivery(otp)}."
                 ),
                 "data": {
-                    "id": user.id,
-                    "full_name": user.full_name,
-                    "email": user.email,
-                    "mobile_number": user.mobile_number,
-                    "role": user.role,
-                    "is_verified": user.is_verified,
-                    "is_active": user.is_active,
+                    **_user_payload(user, request),
+                    "cooldown_seconds": RESEND_COOLDOWN_SECONDS,
                 },
             },
             status=status.HTTP_201_CREATED,
@@ -109,62 +133,51 @@ class UserRegistrationView(APIView):
 
 
 class UserLoginView(APIView):
-    """Authenticate a user using mobile number and password."""
+    """Authenticate with mobile number and password."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Validate credentials and return JWT tokens."""
-
-        serializer = UserLoginSerializer(
-            data=request.data
-        )
+        serializer = UserLoginSerializer(data=request.data)
 
         try:
             serializer.is_valid(raise_exception=True)
-        except AuthenticationFailed:
-            return Response(
-                {
-                    "success": False,
-                    "message": "Invalid mobile number or password.",
-                    "errors": {
-                        "authentication": [
-                            "Invalid credentials."
-                        ]
-                    },
-                },
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-        except serializers.ValidationError as error:
-            # Raised by UserLoginSerializer.validate() for a suspended
-            # account. DRF's ValidationError.detail can be a list, dict,
-            # or ErrorDetail depending on how it was raised - normalizing
-            # to a flat string keeps this response shape consistent with
-            # every other error response in the app.
-            detail = error.detail
-            if isinstance(detail, list):
-                message = str(detail[0])
-            elif isinstance(detail, dict):
-                message = str(next(iter(detail.values()))[0])
-            else:
-                message = str(detail)
 
-            return Response(
-                {
-                    "success": False,
-                    "message": message,
-                    "errors": {"account": [message]},
-                },
-                status=status.HTTP_403_FORBIDDEN,
+        except AuthenticationFailed as error:
+            # A suspended account gets its own clear message (403);
+            # everything else stays a deliberately vague 401.
+            if getattr(error.detail, "code", "") == "account_suspended":
+                message = str(error.detail)
+
+                return _error(
+                    message,
+                    {"account": [message]},
+                    status.HTTP_403_FORBIDDEN,
+                )
+
+            return _error(
+                "Invalid mobile number or password.",
+                {"authentication": ["Invalid credentials."]},
+                status.HTTP_401_UNAUTHORIZED,
+            )
+
+        except Exception as error:  # ValidationError for missing fields etc.
+            detail = getattr(error, "detail", None)
+
+            if detail is None:
+                raise
+
+            return _error(
+                "Login failed.",
+                detail if isinstance(detail, dict) else {"detail": detail},
+                status.HTTP_400_BAD_REQUEST,
             )
 
         response = Response(
             {
                 "success": True,
                 "message": "Login successful.",
-                "data": {
-                    "user": serializer.validated_data["user"],
-                },
+                "data": {"user": serializer.validated_data["user"]},
             },
             status=status.HTTP_200_OK,
         )
@@ -179,41 +192,45 @@ class UserLoginView(APIView):
 
 
 class UserTokenRefreshView(APIView):
-    """Generate a new access token from a refresh token."""
+    """Generate a new access token from the refresh-token cookie."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Refresh the user's access token."""
-
         refresh_token = request.COOKIES.get("refresh_token")
 
         if not refresh_token:
-            return Response(
-                {
-                    "success": False,
-                    "message": "Token refresh failed.",
-                    "errors": {
-                        "refresh": [
-                            "No refresh token cookie was found."
-                        ]
-                    },
-                },
-                status=status.HTTP_401_UNAUTHORIZED,
+            return _error(
+                "Token refresh failed.",
+                {"refresh": ["No refresh token cookie was found."]},
+                status.HTTP_401_UNAUTHORIZED,
             )
 
-        serializer = UserTokenRefreshSerializer(
-            data={"refresh": refresh_token}
-        )
+        # A suspended or deactivated user must not be able to keep
+        # refreshing their way back in.
+        try:
+            token = RefreshToken(refresh_token)
+            user = User.objects.filter(pk=token[jwt_settings.USER_ID_CLAIM]).first()
+        except TokenError:
+            user = None
+
+        if user is None or not user.is_active or user.is_suspended:
+            response = _error(
+                "Token refresh failed.",
+                {"refresh": ["Session is no longer valid."]},
+                status.HTTP_401_UNAUTHORIZED,
+            )
+            _clear_auth_cookies(response)
+
+            return response
+
+        serializer = UserTokenRefreshSerializer(data={"refresh": refresh_token})
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Token refresh failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_401_UNAUTHORIZED,
+            return _error(
+                "Token refresh failed.",
+                serializer.errors,
+                status.HTTP_401_UNAUTHORIZED,
             )
 
         response = Response(
@@ -241,29 +258,21 @@ class UserTokenRefreshView(APIView):
 
 
 class UserLogoutView(APIView):
-    """Logout a user by blacklisting their refresh token."""
+    """Logout by blacklisting the refresh token."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Blacklist the refresh token found in the request cookies."""
-
         refresh_token = request.COOKIES.get("refresh_token")
 
         if refresh_token:
             try:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-
+                RefreshToken(refresh_token).blacklist()
             except TokenError:
                 pass
 
         response = Response(
-            {
-                "success": True,
-                "message": "Logout successful.",
-                "data": {},
-            },
+            {"success": True, "message": "Logout successful.", "data": {}},
             status=status.HTTP_200_OK,
         )
 
@@ -273,126 +282,86 @@ class UserLogoutView(APIView):
 
 
 class ForgotPasswordView(APIView):
-    """Request a password reset link to be sent by email."""
+    """Send a password-reset code to the account's email and mobile.
+
+    The answer is always the same, whether or not the account exists, so
+    nobody can use this form to find out who is registered.
+    """
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Generate a reset link and email it, without revealing account existence."""
-
-        serializer = ForgotPasswordSerializer(
-            data=request.data
-        )
+        serializer = ForgotPasswordSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Invalid request.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return _error(
+                "Invalid request.",
+                serializer.errors,
+                status.HTTP_400_BAD_REQUEST,
             )
 
-        email = serializer.validated_data["email"]
-
-        user = User.objects.filter(
-            email__iexact=email
-        ).first()
-
-        if user is not None:
-            uid = urlsafe_base64_encode(
-                force_bytes(user.pk)
-            )
-
-            token_generator = PasswordResetTokenGenerator()
-            token = token_generator.make_token(user)
-
-            frontend_url = config(
-                "FRONTEND_RESET_PASSWORD_URL",
-                default="http://localhost:5173/reset-password",
-            )
-
-            reset_link = f"{frontend_url}?uid={uid}&token={token}"
-
-            send_mail(
-                subject="Reset your LavernaEvents password",
-                message=(
-                    f"Hello {user.full_name},\n\n"
-                    "We received a request to reset your LavernaEvents password.\n"
-                    f"Click the link below to set a new password:\n\n{reset_link}\n\n"
-                    "If you did not request this, please ignore this email."
-                ),
-                from_email=None,
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
+        request_password_reset(serializer.validated_data["identifier"])
 
         return Response(
             {
                 "success": True,
                 "message": (
-                    "If an account with that email exists, "
-                    "a password reset link has been sent."
+                    "If an account exists for that email or mobile number, "
+                    "a 6-digit reset code has been sent."
                 ),
-                "data": {},
+                "data": {"cooldown_seconds": RESEND_COOLDOWN_SECONDS},
             },
             status=status.HTTP_200_OK,
         )
 
 
 class ResetPasswordView(APIView):
-    """Confirm a password reset using the uid and token from the email link."""
+    """Set a new password using the 6-digit code."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Validate the reset token and set the new password."""
-
-        serializer = ResetPasswordSerializer(
-            data=request.data
-        )
+        serializer = ResetPasswordSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Password reset failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return _error(
+                "Password reset failed.",
+                serializer.errors,
+                status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer.save()
+        success, message = reset_password_with_otp(
+            identifier=serializer.validated_data["identifier"],
+            code=serializer.validated_data["code"],
+            new_password=serializer.validated_data["new_password"],
+        )
+
+        if not success:
+            return _error(
+                message,
+                {"code": [message]},
+                status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
-            {
-                "success": True,
-                "message": "Password reset successfully. You can now log in.",
-                "data": {},
-            },
+            {"success": True, "message": message, "data": {}},
             status=status.HTTP_200_OK,
         )
 
 
 class VerifyMobileView(APIView):
-    """Confirm a user's mobile number using a one-time code."""
+    """Confirm a mobile number using the registration code."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Validate the OTP code and mark the user's mobile number as verified."""
-
         serializer = VerifyMobileSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Invalid request.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return _error(
+                "Invalid request.",
+                serializer.errors,
+                status.HTTP_400_BAD_REQUEST,
             )
 
         success, message = verify_otp_code(
@@ -401,51 +370,40 @@ class VerifyMobileView(APIView):
         )
 
         if not success:
-            return Response(
-                {
-                    "success": False,
-                    "message": message,
-                    "errors": {"code": [message]},
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return _error(
+                message,
+                {"code": [message]},
+                status.HTTP_400_BAD_REQUEST,
             )
 
         return Response(
-            {
-                "success": True,
-                "message": message,
-                "data": {},
-            },
+            {"success": True, "message": message, "data": {}},
             status=status.HTTP_200_OK,
         )
 
 
 class ResendOTPView(APIView):
-    """Resend a fresh mobile verification OTP."""
+    """Send a fresh registration code (same answer for every number)."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Generate and send a new OTP if the account exists and is unverified."""
-
         serializer = ResendOTPSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Invalid request.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return _error(
+                "Invalid request.",
+                serializer.errors,
+                status.HTTP_400_BAD_REQUEST,
             )
 
-        mobile_number = serializer.validated_data["mobile_number"]
-
-        user = User.objects.filter(mobile_number=mobile_number).first()
+        user = get_user_by_mobile(serializer.validated_data["mobile_number"])
 
         if user is not None and not user.is_verified:
-            send_verification_otp(user)
+            try:
+                send_verification_otp(user)
+            except OTPThrottled:
+                pass
 
         return Response(
             {
@@ -454,35 +412,94 @@ class ResendOTPView(APIView):
                     "If an unverified account with that mobile number exists, "
                     "a new verification code has been sent."
                 ),
-                "data": {},
+                "data": {"cooldown_seconds": RESEND_COOLDOWN_SECONDS},
             },
             status=status.HTTP_200_OK,
         )
 
 
 class UserMeView(APIView):
-    """Return the currently authenticated user."""
+    """The logged-in user's profile: read it (GET) or update it (PATCH)."""
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """Return the requesting user's profile."""
-
-        user = request.user
-
         return Response(
             {
                 "success": True,
                 "message": "Current user retrieved successfully.",
-                "data": {
-                    "id": user.id,
-                    "full_name": user.full_name,
-                    "email": user.email,
-                    "mobile_number": user.mobile_number,
-                    "role": user.role,
-                    "is_verified": user.is_verified,
-                    "is_active": user.is_active,
-                },
+                "data": _user_payload(request.user, request),
             },
             status=status.HTTP_200_OK,
         )
+
+    def patch(self, request):
+        serializer = UpdateProfileSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return _error(
+                "Profile update failed.",
+                serializer.errors,
+                status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        changed = []
+
+        for field in ("full_name", "profile_image"):
+            if field in serializer.validated_data:
+                setattr(user, field, serializer.validated_data[field])
+                changed.append(field)
+
+        if changed:
+            user.save(update_fields=[*changed, "updated_at"])
+
+        return Response(
+            {
+                "success": True,
+                "message": "Profile updated successfully.",
+                "data": _user_payload(user, request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ChangePasswordView(APIView):
+    """A logged-in user changes their password. Every other login ends;
+    this browser stays logged in with fresh tokens."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+
+        if not serializer.is_valid():
+            return _error(
+                "Password change failed.",
+                serializer.errors,
+                status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password", "updated_at"])
+
+        revoke_user_sessions(user)
+
+        refresh = RefreshToken.for_user(user)
+
+        response = Response(
+            {"success": True, "message": "Password changed successfully.", "data": {}},
+            status=status.HTTP_200_OK,
+        )
+
+        _set_auth_cookies(
+            response,
+            access=str(refresh.access_token),
+            refresh=str(refresh),
+        )
+
+        return response

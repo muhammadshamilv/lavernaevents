@@ -93,6 +93,13 @@ export function useSendPendingWhatsAppReminderMutation() {
     mutationFn: (pendingId: number) => sendPendingWhatsAppReminder(pendingId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invitations", "pending-whatsapp-reminders"] });
+      // A reminder send adds a row to the event's send log.
+      queryClient.invalidateQueries({ queryKey: ["notification-logs"] });
+    },
+    onError: () => {
+      // The server drops reminders that can never be sent (guest already
+      // replied, event closed), so refresh the list either way.
+      queryClient.invalidateQueries({ queryKey: ["invitations", "pending-whatsapp-reminders"] });
     },
   });
 }

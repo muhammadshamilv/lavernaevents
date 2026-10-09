@@ -1,4 +1,5 @@
 from common.models import TimeStampedModel
+from common.validators import validate_image_extension, validate_image_max_5mb
 from django.db import models
 
 
@@ -65,7 +66,10 @@ class Event(TimeStampedModel):
     event_end_time = models.TimeField(
         null=True,
         blank=True,
-        help_text="Optional. Shown to guests as a From - To time range.",
+        help_text=(
+            "Optional. Shown to guests as a From - To time range. May be "
+            "earlier than the start time for events that run past midnight."
+        ),
     )
 
     venue_name = models.CharField(
@@ -85,6 +89,7 @@ class Event(TimeStampedModel):
         upload_to="events/covers/",
         blank=True,
         null=True,
+        validators=[validate_image_extension, validate_image_max_5mb],
     )
 
     status = models.CharField(
@@ -96,6 +101,16 @@ class Event(TimeStampedModel):
     class Meta:
         db_table = "events"
         ordering = ["-event_date", "-created_at"]
+        indexes = [
+            models.Index(
+                fields=["organizer", "-event_date"],
+                name="events_org_date_idx",
+            ),
+            models.Index(
+                fields=["organizer", "status"],
+                name="events_org_status_idx",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.organizer.mobile_number})"

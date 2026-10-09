@@ -13,12 +13,18 @@ import { loginSchema, type LoginFormValues } from "@/schemas/auth.schema";
 import { useLoginMutation } from "@/queries/useAuthQueries";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { homePathForRole } from "@/lib/roleHome";
 
 export default function LoginForm() {
   const isDesktop = useIsDesktop();
   const navigate = useNavigate();
   const location = useLocation();
-  const justVerified = Boolean((location.state as { verified?: boolean } | null)?.verified);
+  const locationState = location.state as
+    | { verified?: boolean; passwordReset?: boolean; from?: { pathname?: string } }
+    | null;
+  const justVerified = Boolean(locationState?.verified);
+  const passwordReset = Boolean(locationState?.passwordReset);
+  const fromPath = locationState?.from?.pathname;
   const [searchParams] = useSearchParams();
   const planSlug = searchParams.get("plan");
   const loginMutation = useLoginMutation();
@@ -36,14 +42,18 @@ export default function LoginForm() {
       onSuccess: (user) => {
         const planParam = planSlug ? `&plan=${planSlug}` : "";
 
-        if (!user.is_verified) {
-          navigate(`/verify-mobile?mobile=${user.mobile_number}${planParam}`);
-        } else if (user.role === "PHOTOGRAPHER") {
-          navigate("/photographer");
-        } else if (planSlug) {
+        const home = homePathForRole(user.role);
+
+        if (!user.is_verified && user.role !== "ADMIN") {
+          navigate(
+            `/verify-mobile?mobile=${encodeURIComponent(user.mobile_number)}${planParam}`
+          );
+        } else if (planSlug && user.role === "ORGANIZER") {
           navigate(`/pricing?plan=${planSlug}`);
+        } else if (fromPath && fromPath.startsWith(home) && home !== "/") {
+          navigate(fromPath, { replace: true });
         } else {
-          navigate("/portal");
+          navigate(home, { replace: true });
         }
       },
     });
@@ -58,12 +68,21 @@ export default function LoginForm() {
         </div>
       )}
 
+      {passwordReset && (
+        <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Password updated. Sign in with your new password.
+        </div>
+      )}
+
       <div className="space-y-1.5">
         <Label htmlFor="mobile_number">Mobile number</Label>
         <Input
           id="mobile_number"
-          inputMode="numeric"
-          placeholder="9876543210"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          placeholder="9876543210 or +91 98765 43210"
           hasError={!!errors.mobile_number}
           {...register("mobile_number")}
         />
@@ -71,9 +90,18 @@ export default function LoginForm() {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="password">Password</Label>
+          <Link
+            to="/forgot-password"
+            className="text-sm font-semibold text-[var(--brand-pink)]"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <PasswordInput
           id="password"
+          autoComplete="current-password"
           placeholder="••••••••"
           hasError={!!errors.password}
           {...register("password")}

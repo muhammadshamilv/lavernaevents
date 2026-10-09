@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
@@ -17,6 +18,7 @@ class CustomUserAdmin(UserAdmin):
         "role",
         "is_verified",
         "is_active",
+        "is_suspended",
         "created_at",
     )
 
@@ -24,6 +26,7 @@ class CustomUserAdmin(UserAdmin):
         "role",
         "is_verified",
         "is_active",
+        "is_suspended",
         "is_staff",
     )
 
@@ -33,9 +36,7 @@ class CustomUserAdmin(UserAdmin):
         "full_name",
     )
 
-    ordering = (
-        "-created_at",
-    )
+    ordering = ("-created_at",)
 
     readonly_fields = (
         "created_at",
@@ -46,22 +47,11 @@ class CustomUserAdmin(UserAdmin):
     fieldsets = (
         (
             "Account Information",
-            {
-                "fields": (
-                    "mobile_number",
-                    "email",
-                    "password",
-                )
-            },
+            {"fields": ("mobile_number", "email", "password")},
         ),
         (
             "Personal Information",
-            {
-                "fields": (
-                    "full_name",
-                    "profile_image",
-                )
-            },
+            {"fields": ("full_name", "profile_image")},
         ),
         (
             "Role & Status",
@@ -70,6 +60,7 @@ class CustomUserAdmin(UserAdmin):
                     "role",
                     "is_verified",
                     "is_active",
+                    "is_suspended",
                     "is_staff",
                     "is_superuser",
                 )
@@ -77,22 +68,11 @@ class CustomUserAdmin(UserAdmin):
         ),
         (
             "Permissions",
-            {
-                "fields": (
-                    "groups",
-                    "user_permissions",
-                )
-            },
+            {"fields": ("groups", "user_permissions")},
         ),
         (
             "Important Dates",
-            {
-                "fields": (
-                    "last_login",
-                    "created_at",
-                    "updated_at",
-                )
-            },
+            {"fields": ("last_login", "created_at", "updated_at")},
         ),
     )
 
@@ -118,30 +98,46 @@ class CustomUserAdmin(UserAdmin):
 
 @admin.register(MobileOTP)
 class MobileOTPAdmin(admin.ModelAdmin):
-    """Admin configuration for viewing mobile verification OTPs (for debugging)."""
+    """Read-only view of OTPs for support / debugging.
+
+    The code itself is shown only while DEBUG is on, so staff on the live
+    site cannot read other people's verification or reset codes.
+    """
 
     list_display = (
         "user",
-        "code",
+        "purpose",
+        "shown_code",
+        "attempts",
         "is_used",
         "expires_at",
         "created_at",
     )
 
-    list_filter = (
-        "is_used",
-    )
+    list_filter = ("purpose", "is_used")
 
     search_fields = (
         "user__mobile_number",
         "user__email",
-        "code",
     )
 
-    ordering = (
-        "-created_at",
-    )
+    ordering = ("-created_at",)
 
     readonly_fields = (
+        "user",
+        "purpose",
+        "shown_code",
+        "attempts",
+        "is_used",
+        "expires_at",
         "created_at",
     )
+
+    exclude = ("code",)
+
+    @admin.display(description="Code")
+    def shown_code(self, obj):
+        return obj.code if settings.DEBUG else "******"
+
+    def has_add_permission(self, request):
+        return False

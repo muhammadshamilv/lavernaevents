@@ -1,11 +1,10 @@
 from common.permissions import IsOrganizer, IsPhotographer
 from django.shortcuts import get_object_or_404
+from events.models import Event
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from events.models import Event
 
 from .models import PhotographerEventAccess
 from .serializers import (
@@ -13,20 +12,26 @@ from .serializers import (
     PhotographerAccessSerializer,
     PhotographerEventGrantSerializer,
 )
-from .services import get_events_for_photographer, grant_access, revoke_access
+from .services import (
+    PhotographerAccessError,
+    get_events_for_photographer,
+    grant_access,
+    revoke_access,
+)
 
 ERROR_STATUS_MAP = {
     "no_access": status.HTTP_403_FORBIDDEN,
+    "no_active_plan": status.HTTP_402_PAYMENT_REQUIRED,
+    "photographer_access_not_enabled": status.HTTP_403_FORBIDDEN,
+    "too_many_photographers": status.HTTP_409_CONFLICT,
 }
 
 
 class EventPhotographerAccessView(APIView):
     """Organizer-side: list everyone granted access to this event, or grant a new one.
 
-    Scoped to organizer-owned events only - get_object_or_404 filters by
-    organizer=request.user, so an organizer can never see or grant access
-    on another organizer's event, and a non-existent/foreign event id
-    returns a plain 404 rather than leaking whether it exists.
+    Scoped to organizer-owned events only - a foreign or non-existent event
+    id returns a plain 404.
     """
 
     permission_classes = [IsAuthenticated, IsOrganizer]
@@ -39,17 +44,13 @@ class EventPhotographerAccessView(APIView):
 
         event = self.get_event(request, event_pk)
 
-        grants = event.photographer_access_grants.select_related(
-            "photographer"
-        ).order_by("-created_at")
-
-        serializer = PhotographerAccessSerializer(grants, many=True)
+        grants = event.photographer_access_grants.select_related("photographer").order_by("-created_at")
 
         return Response(
             {
                 "success": True,
                 "message": "Photographer access grants retrieved successfully.",
-                "data": serializer.data,
+                "data": PhotographerAccessSerializer(grants, many=True).data,
             },
             status=status.HTTP_200_OK,
         )
@@ -73,12 +74,22 @@ class EventPhotographerAccessView(APIView):
 
         photographer = serializer.context["photographer"]
 
-        grant = grant_access(
-            event=event,
-            photographer=photographer,
-            granted_by=request.user,
-            expires_at=serializer.validated_data.get("expires_at"),
-        )
+        try:
+            grant = grant_access(
+                event=event,
+                photographer=photographer,
+                granted_by=request.user,
+                expires_at=serializer.validated_data.get("expires_at"),
+            )
+        except PhotographerAccessError as error:
+            return Response(
+                {
+                    "success": False,
+                    "message": error.message,
+                    "errors": {"photographer": [error.message]},
+                },
+                status=ERROR_STATUS_MAP.get(error.code, status.HTTP_400_BAD_REQUEST),
+            )
 
         return Response(
             {
@@ -96,10 +107,8 @@ class RevokePhotographerAccessView(APIView):
     permission_classes = [IsAuthenticated, IsOrganizer]
 
     def post(self, request, event_pk, grant_pk):
-        """Revoke the given access grant. Scoped to the requesting organizer's own event."""
-
         grant = get_object_or_404(
-            PhotographerEventAccess,
+            PhotographerEventAccess.objects.select_related("photographer"),
             pk=grant_pk,
             event_id=event_pk,
             event__organizer=request.user,
@@ -118,24 +127,18 @@ class RevokePhotographerAccessView(APIView):
 
 
 class MyPhotographerEventsView(APIView):
-    """Photographer-side: list every event this photographer currently has valid access to."""
+    """Photographer-side: every event this photographer can upload to right now."""
 
     permission_classes = [IsAuthenticated, IsPhotographer]
 
     def get(self, request):
-        """Return only currently-valid (active, non-expired) grants."""
-
         grants = get_events_for_photographer(request.user)
-
-        serializer = PhotographerEventGrantSerializer(
-            grants, many=True, context={"request": request}
-        )
 
         return Response(
             {
                 "success": True,
                 "message": "Your assigned events were retrieved successfully.",
-                "data": serializer.data,
+                "data": PhotographerEventGrantSerializer(grants, many=True, context={"request": request}).data,
             },
             status=status.HTTP_200_OK,
         )

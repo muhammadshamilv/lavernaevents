@@ -1,6 +1,8 @@
 from common.permissions import IsOrganizer
 from events.models import Event
 from guests.models import Guest
+from django.conf import settings
+from django.http import HttpResponse
 from invitations.services import InvitationError
 from rest_framework import status
 from rest_framework.generics import ListAPIView
@@ -18,6 +20,7 @@ from .services import (
     NotificationError,
     apply_voice_call_status_callback,
     build_voice_message,
+    get_voice_settings,
     mark_whatsapp_as_sent,
     retry_notification,
     send_active_template_to_guest,
@@ -35,6 +38,7 @@ ERROR_STATUS_MAP = {
     "missing_email": status.HTTP_400_BAD_REQUEST,
     "email_send_failed": status.HTTP_502_BAD_GATEWAY,
     "sms_send_failed": status.HTTP_502_BAD_GATEWAY,
+    "sms_not_configured": status.HTTP_503_SERVICE_UNAVAILABLE,
     "invalid_channel": status.HTTP_400_BAD_REQUEST,
     "bulk_not_supported": status.HTTP_400_BAD_REQUEST,
     "no_active_template": status.HTTP_409_CONFLICT,
@@ -45,6 +49,11 @@ ERROR_STATUS_MAP = {
     "voice_call_not_available": status.HTTP_409_CONFLICT,
     "invitation_limit_exceeded": status.HTTP_409_CONFLICT,
     "platform_pool_exhausted": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "event_not_active": status.HTTP_409_CONFLICT,
+    "not_retryable": status.HTTP_409_CONFLICT,
+    "guest_already_responded": status.HTTP_409_CONFLICT,
+    "no_previous_invitation": status.HTTP_409_CONFLICT,
+    "sms_international_unsupported": status.HTTP_400_BAD_REQUEST,
 }
 
 
@@ -268,9 +277,9 @@ class RetryNotificationView(APIView):
             )
 
         try:
-            updated_log = retry_notification(log)
+            updated_log = retry_notification(log, request.user)
 
-        except NotificationError as error:
+        except (InvitationError, NotificationError) as error:
             return _send_error_response(error, key="notification")
 
         serializer = NotificationLogSerializer(updated_log)
@@ -295,9 +304,14 @@ class EventNotificationLogListView(ListAPIView):
         return NotificationLog.objects.filter(
             invitation__event__pk=self.kwargs["event_pk"],
             invitation__event__organizer=self.request.user,
-        )
+        ).select_related("guest", "invitation__template")
 
     def list(self, request, *args, **kwargs):
+        # Someone else's (or a missing) event is a 404, like every other
+        # event-scoped endpoint - not an empty 200 that hides the difference.
+        if get_owned_event_or_none(self.kwargs["event_pk"], request.user) is None:
+            return _event_not_found_response()
+
         queryset = self.get_queryset()
 
         page = self.paginate_queryset(queryset)
@@ -322,10 +336,45 @@ class EventNotificationLogListView(ListAPIView):
 # Twilio webhooks (called BY Twilio, not by our frontend)
 # ---------------------------------------------------------------------
 #
-# No session cookie / JWT is possible here, so both are AllowAny and trust
-# the unguessable log_pk in the URL - the same security model as the guest
-# response-link flow. For production hardening, verify Twilio's
-# X-Twilio-Signature header against TWILIO_AUTH_TOKEN.
+# No cookie / JWT is possible here, so both views are AllowAny. They are
+# protected by checking Twilio's X-Twilio-Signature header against
+# TWILIO_AUTH_TOKEN, so only Twilio can read a call's script or report its
+# result. Set TWILIO_VALIDATE_SIGNATURE=False only for local experiments.
+
+def _twilio_request_is_genuine(request) -> bool:
+    from decouple import config
+
+    if not config("TWILIO_VALIDATE_SIGNATURE", default=True, cast=bool):
+        return True
+
+    auth_token = config("TWILIO_AUTH_TOKEN", default="")
+
+    if not auth_token:
+        return False
+
+    from twilio.request_validator import RequestValidator
+
+    # Twilio signed the PUBLIC url it called, which behind a proxy is not
+    # the url Django sees - so rebuild it from PUBLIC_BACKEND_URL.
+    public_base = (getattr(settings, "PUBLIC_BACKEND_URL", "") or "").rstrip("/")
+    url = f"{public_base}{request.path}" if public_base else request.build_absolute_uri()
+
+    if request.META.get("QUERY_STRING"):
+        url = f"{url}?{request.META['QUERY_STRING']}"
+
+    params = {key: value for key, value in request.POST.items()}
+    signature = request.META.get("HTTP_X_TWILIO_SIGNATURE", "")
+
+    return RequestValidator(auth_token).validate(url, params, signature)
+
+
+def _twiml_response(inner: str, http_status: int = status.HTTP_200_OK) -> HttpResponse:
+    return HttpResponse(
+        f'<?xml version="1.0" encoding="UTF-8"?><Response>{inner}</Response>',
+        content_type="text/xml",
+        status=http_status,
+    )
+
 
 class VoiceTwiMLView(APIView):
     """Return the TwiML Twilio fetches when a voice call connects."""
@@ -334,7 +383,8 @@ class VoiceTwiMLView(APIView):
     authentication_classes = []
 
     def post(self, request, log_pk):
-        from django.http import HttpResponse
+        if not _twilio_request_is_genuine(request):
+            return HttpResponse("Forbidden", status=status.HTTP_403_FORBIDDEN)
 
         log = NotificationLog.objects.filter(
             pk=log_pk,
@@ -342,10 +392,12 @@ class VoiceTwiMLView(APIView):
         ).select_related("invitation", "invitation__event", "invitation__guest").first()
 
         if log is None:
-            twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Invitation not found.</Say></Response>'
-            return HttpResponse(twiml, content_type="text/xml", status=status.HTTP_404_NOT_FOUND)
+            return _twiml_response("<Say>Invitation not found.</Say>", status.HTTP_404_NOT_FOUND)
 
         message = build_voice_message(log.invitation)
+
+        # Voice name + language come from VOICE_CALL_LANGUAGE ("en" / "ml").
+        voice, language = get_voice_settings()
 
         escaped_message = (
             message.replace("&", "&amp;")
@@ -355,14 +407,7 @@ class VoiceTwiMLView(APIView):
             .replace("'", "&apos;")
         )
 
-        twiml = (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response>"
-            f'<Say voice="Polly.Kajal-Neural">{escaped_message}</Say>'
-            "</Response>"
-        )
-
-        return HttpResponse(twiml, content_type="text/xml", status=status.HTTP_200_OK)
+        return _twiml_response(f'<Say voice="{voice}" language="{language}">{escaped_message}</Say>')
 
 
 class TwilioCallStatusCallbackView(APIView):
@@ -372,10 +417,13 @@ class TwilioCallStatusCallbackView(APIView):
     authentication_classes = []
 
     def post(self, request, log_pk):
+        if not _twilio_request_is_genuine(request):
+            return HttpResponse("Forbidden", status=status.HTTP_403_FORBIDDEN)
+
         log = NotificationLog.objects.filter(
             pk=log_pk,
             channel=NotificationLog.Channel.VOICE_CALL,
-        ).first()
+        ).select_related("guest").first()
 
         if log is None:
             return Response(status=status.HTTP_404_NOT_FOUND)
@@ -483,6 +531,11 @@ class SendPendingWhatsAppReminderView(APIView):
             )
 
         except (InvitationError, NotificationError) as error:
+            # A reminder that can never be sent (guest already replied, event
+            # closed) would otherwise sit in the list forever.
+            if error.code in ("guest_already_responded", "no_previous_invitation", "event_not_active"):
+                pending.delete()
+
             return _send_error_response(error)
 
         pending.delete()

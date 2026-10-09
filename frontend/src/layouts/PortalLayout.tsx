@@ -6,6 +6,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { PortalBottomNav, PortalSidebar, PortalTopBar } from "@/components/portal/PortalNav";
 import { Toaster } from "@/components/ui/toaster";
+import { useRouteTitle } from "@/hooks/useRouteTitle";
+
+function SkipLink() {
+  return (
+    <a
+      href="#main-content"
+      className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-full focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-[var(--brand-navy)] focus:shadow-lg"
+    >
+      Skip to content
+    </a>
+  );
+}
 
 function PortalLayoutSkeleton() {
   return (
@@ -39,6 +51,7 @@ function PortalLayoutSkeleton() {
 export default function PortalLayout() {
   const { user } = useAuthStore();
   const isDesktop = useIsDesktop();
+  useRouteTitle("portal");
 
   // usePortalAccess() is called unconditionally (required - hooks can't
   // be called conditionally), but its result is ignored below for a
@@ -75,7 +88,9 @@ export default function PortalLayout() {
   }
 
   if (access.next_step === "verify_mobile") {
-    const mobileParam = user?.mobile_number ? `?mobile=${user.mobile_number}` : "";
+    const mobileParam = user?.mobile_number
+      ? `?mobile=${encodeURIComponent(user.mobile_number)}`
+      : "";
     return <Navigate to={`/verify-mobile${mobileParam}`} replace />;
   }
 
@@ -86,8 +101,9 @@ export default function PortalLayout() {
   if (isDesktop) {
     return (
       <div className="flex min-h-screen bg-slate-50/70">
+        <SkipLink />
         <PortalSidebar />
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto focus:outline-none">
           <Outlet />
         </main>
         <Toaster />
@@ -97,8 +113,9 @@ export default function PortalLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/70">
+      <SkipLink />
       <PortalTopBar />
-      <main className="min-w-0 flex-1 pb-24">
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-24 focus:outline-none">
         <Outlet />
       </main>
       <PortalBottomNav />

@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { Link, Navigate, NavLink, Outlet } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarDays, Home, LogOut } from "lucide-react";
+import { CalendarDays, LogOut, Settings } from "lucide-react";
 import logo from "@/assets/laverna-logo.png";
 import { useAuthStore } from "@/stores/auth.store";
 import { useLogoutMutation } from "@/queries/useAuthQueries";
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
+import { homePathForRole } from "@/lib/roleHome";
 
 const NAV_ITEMS = [
   { to: "/photographer", label: "Events", shortLabel: "Events", icon: CalendarDays, end: true },
+  { to: "/photographer/settings", label: "Account settings", shortLabel: "Settings", icon: Settings, end: false },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -152,21 +154,6 @@ function PhotographerBottomNav() {
         </NavLink>
       ))}
 
-      <NavLink
-        to="/photographer"
-        end
-        className={({ isActive }) =>
-          cn(
-            "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-xs font-medium transition-all duration-200",
-            isActive
-              ? "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]"
-              : "text-slate-400 hover:text-slate-600"
-          )
-        }
-      >
-        <Home className="h-5 w-5" />
-        Home
-      </NavLink>
     </nav>
   );
 }
@@ -175,7 +162,7 @@ export default function PhotographerLayout() {
   const { user } = useAuthStore();
 
   if (user && user.role !== "PHOTOGRAPHER") {
-    return <Navigate to="/portal" replace />;
+    return <Navigate to={homePathForRole(user.role)} replace />;
   }
 
   return (

@@ -73,3 +73,19 @@ class TopupPurchaseSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = fields
+
+
+# ---------------------------------------------------------------------
+# Billing history (plan payments + topup purchases in one list)
+# ---------------------------------------------------------------------
+
+class PaymentHistoryItemSerializer(serializers.Serializer):
+    """One row of the organizer's billing history."""
+
+    id = serializers.CharField()
+    kind = serializers.ChoiceField(choices=["PLAN", "TOPUP"])
+    description = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    currency = serializers.CharField()
+    status = serializers.CharField()
+    created_at = serializers.DateTimeField()

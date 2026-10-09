@@ -16,6 +16,8 @@ class EventAdmin(admin.ModelAdmin):
         "created_at",
     )
 
+    list_select_related = ("organizer",)
+
     list_filter = (
         "event_type",
         "status",
@@ -38,14 +40,7 @@ class EventAdmin(admin.ModelAdmin):
     )
 
     fieldsets = (
-        (
-            "Organizer",
-            {
-                "fields": (
-                    "organizer",
-                )
-            },
-        ),
+        ("Organizer", {"fields": ("organizer",)}),
         (
             "Event Details",
             {
@@ -65,27 +60,13 @@ class EventAdmin(admin.ModelAdmin):
                 "fields": (
                     "event_date",
                     "event_time",
+                    "event_end_time",
                     "venue_name",
                     "address",
                     "google_maps_link",
                 )
             },
         ),
-        (
-            "Media",
-            {
-                "fields": (
-                    "cover_image",
-                )
-            },
-        ),
-        (
-            "Timestamps",
-            {
-                "fields": (
-                    "created_at",
-                    "updated_at",
-                )
-            },
-        ),
+        ("Media", {"fields": ("cover_image",)}),
+        ("Timestamps", {"fields": ("created_at", "updated_at")}),
     )

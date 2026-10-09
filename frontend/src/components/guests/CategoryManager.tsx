@@ -122,12 +122,13 @@ export default function CategoryManager({
                 if (e.key === "Enter") handleRename(category.id);
                 if (e.key === "Escape") setEditingId(null);
               }}
-              className="h-8 w-32 rounded-full px-3 text-xs"
+              maxLength={80}
+              className="h-9 w-32 rounded-full px-3 text-xs"
             />
             <button
               type="button"
               onClick={() => handleRename(category.id)}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50"
               aria-label="Save"
             >
               <Check className="h-3.5 w-3.5" />
@@ -135,7 +136,7 @@ export default function CategoryManager({
             <button
               type="button"
               onClick={() => setEditingId(null)}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
               aria-label="Cancel"
             >
               <X className="h-3.5 w-3.5" />
@@ -145,36 +146,41 @@ export default function CategoryManager({
           <div
             key={category.id}
             className={cn(
-              "group flex items-center gap-1 rounded-full pl-3.5 pr-1.5 py-1.5 text-xs font-semibold transition-colors",
+              "group flex items-center gap-0.5 rounded-full py-1 pl-3.5 pr-1.5 text-xs font-semibold transition-colors",
               activeCategory === category.id
                 ? "bg-[var(--brand-pink)] text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200"
             )}
           >
-            <button type="button" onClick={() => onSelectCategory(category.id)}>
+            <button
+              type="button"
+              onClick={() => onSelectCategory(category.id)}
+              aria-pressed={activeCategory === category.id}
+              className="py-1"
+            >
               {category.name} · {category.guest_count}
             </button>
             <button
               type="button"
               onClick={() => startEdit(category)}
               className={cn(
-                "flex h-5 w-5 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100",
+                "flex h-7 w-7 items-center justify-center rounded-full transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100",
                 activeCategory === category.id ? "hover:bg-white/20" : "hover:bg-slate-300/50"
               )}
               aria-label="Rename category"
             >
-              <Pencil className="h-3 w-3" />
+              <Pencil className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
               onClick={() => setDeletingCategory(category)}
               className={cn(
-                "flex h-5 w-5 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100",
+                "flex h-7 w-7 items-center justify-center rounded-full transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100",
                 activeCategory === category.id ? "hover:bg-white/20" : "hover:bg-slate-300/50"
               )}
               aria-label="Delete category"
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
         )
@@ -204,12 +210,13 @@ export default function CategoryManager({
               if (e.key === "Enter") handleCreate();
               if (e.key === "Escape") setAdding(false);
             }}
-            className="h-8 w-36 rounded-full px-3 text-xs"
+            maxLength={80}
+            className="h-9 w-36 rounded-full px-3 text-xs"
           />
           <button
             type="button"
             onClick={handleCreate}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50"
             aria-label="Add"
           >
             <Check className="h-3.5 w-3.5" />
@@ -217,7 +224,7 @@ export default function CategoryManager({
           <button
             type="button"
             onClick={() => setAdding(false)}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
             aria-label="Cancel"
           >
             <X className="h-3.5 w-3.5" />

@@ -14,7 +14,7 @@ from django.http import HttpResponse
 from .report_pdf import render_report_pdf
 from .reports import build_full_report
 
-from .models import ActiveFilledTemplate, Invitation, InvitationTemplate, PendingWhatsAppReminder, ReminderSchedule
+from .models import Invitation, InvitationTemplate, PendingWhatsAppReminder, ReminderSchedule
 from .serializers import (
     ActiveFilledTemplateSerializer,
     CustomTemplateSerializer,
@@ -30,15 +30,22 @@ from .serializers import (
 from .services import (
     InvitationError,
     build_placeholder_context,
+    delete_custom_template,
     deselect_active_template,
     fill_active_template,
     get_active_filled_template,
     preview_template,
     upload_custom_template,
+    upsert_reminder_schedule,
+    visible_templates_for,
 )
 
 PREVIEW_ERROR_STATUS_MAP = {
     "invalid_placeholder": status.HTTP_400_BAD_REQUEST,
+}
+
+DELETE_ERROR_STATUS_MAP = {
+    "template_not_found": status.HTTP_404_NOT_FOUND,
 }
 
 UPLOAD_ERROR_STATUS_MAP = {
@@ -65,12 +72,11 @@ class InvitationTemplateListView(ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        from django.db.models import Q
-
-        return InvitationTemplate.objects.filter(
-            Q(owner__isnull=True) | Q(owner=self.request.user),
-            is_active=True,
-        ).prefetch_related("custom_fields").order_by("display_order", "name")
+        return (
+            visible_templates_for(self.request.user)
+            .prefetch_related("custom_fields")
+            .order_by("display_order", "name")
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
@@ -102,25 +108,36 @@ class CustomTemplateUploadView(APIView):
     def post(self, request):
         import json
 
-        data = request.data.copy()
+        # A plain dict (not request.data.copy()): copying a multipart
+        # QueryDict deep-copies the uploaded files, which fails for files
+        # large enough to be spooled to disk.
+        data = {key: request.data.get(key) for key in request.data.keys()}
 
         # custom_fields arrives as a JSON-encoded string inside the
         # multipart body (multipart/form-data cannot carry nested JSON
         # natively) - decode it before validation.
         raw_custom_fields = data.get("custom_fields")
 
-        if isinstance(raw_custom_fields, str) and raw_custom_fields:
-            try:
-                data["custom_fields"] = json.loads(raw_custom_fields)
-            except ValueError:
-                return Response(
-                    {
-                        "success": False,
-                        "message": "Template upload failed.",
-                        "errors": {"custom_fields": ["Must be valid JSON."]},
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        if isinstance(raw_custom_fields, str):
+            if raw_custom_fields.strip():
+                try:
+                    decoded = json.loads(raw_custom_fields)
+                except ValueError:
+                    decoded = None
+
+                if not isinstance(decoded, list):
+                    return Response(
+                        {
+                            "success": False,
+                            "message": "Template upload failed.",
+                            "errors": {"custom_fields": ["Must be a JSON list."]},
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                data["custom_fields"] = decoded
+            else:
+                data.pop("custom_fields")
 
         serializer = CustomTemplateUploadSerializer(data=data)
 
@@ -164,6 +181,35 @@ class CustomTemplateUploadView(APIView):
                 "data": response_serializer.data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class CustomTemplateDeleteView(APIView):
+    """Remove one of the organizer's own uploaded templates (frees a slot)."""
+
+    permission_classes = [IsAuthenticated, IsOrganizer]
+
+    def delete(self, request, template_pk):
+        try:
+            outcome = delete_custom_template(request.user, template_pk)
+
+        except InvitationError as error:
+            return Response(
+                {
+                    "success": False,
+                    "message": error.message,
+                    "errors": {"template": [error.message]},
+                },
+                status=DELETE_ERROR_STATUS_MAP.get(error.code, status.HTTP_400_BAD_REQUEST),
+            )
+
+        return Response(
+            {
+                "success": True,
+                "message": "Template removed.",
+                "data": {"outcome": outcome},
+            },
+            status=status.HTTP_200_OK,
         )
 
 
@@ -247,9 +293,8 @@ class InvitationPreviewView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        template = InvitationTemplate.objects.filter(
+        template = visible_templates_for(request.user).filter(
             pk=serializer.validated_data["template_id"],
-            is_active=True,
         ).first()
 
         if template is None:

@@ -1,17 +1,24 @@
 import base64
 import io
+import logging
 import re
 import secrets
 from datetime import datetime
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
+from django.db.models import Q
+from memberships.models import OrganizerTemplateLibrary
 from memberships.services import add_template_to_library
 from memberships.utils import LimitExceededError, check_template_limit
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
 from .models import ActiveFilledTemplate, Invitation, InvitationTemplate
+
+
+logger = logging.getLogger(__name__)
 
 
 class InvitationError(Exception):
@@ -27,6 +34,43 @@ def generate_response_token() -> str:
     """Generate a URL-safe, hard-to-guess token for the guest response link."""
 
     return secrets.token_urlsafe(24)
+
+
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+# Longest edge (px) a template background is rendered at. Keeps memory and
+# render time bounded however large the uploaded picture is.
+MAX_RENDER_EDGE = 2400
+
+
+def substitute_placeholders(text: str, context: dict) -> str:
+    """Replace {name} tokens with values from `context`.
+
+    A plain regex substitution - NOT str.format - so template text can never
+    reach into Python objects (e.g. "{event_name.__class__}"), a stray brace
+    or "{0}" can never crash a render, and an unknown {token} is left exactly
+    as typed. Values are inserted as-is and never re-scanned.
+    """
+
+    def _swap(match):
+        key = match.group(1)
+
+        if key in context and context[key] is not None:
+            return str(context[key])
+
+        return match.group(0)
+
+    return _PLACEHOLDER.sub(_swap, text or "")
+
+
+def visible_templates_for(organizer):
+    """Active templates this organizer may use: platform templates plus
+    their own uploads. Other organizers' uploads are never visible."""
+
+    return InvitationTemplate.objects.filter(
+        Q(owner__isnull=True) | Q(owner=organizer),
+        is_active=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -133,15 +177,18 @@ def render_template_text(template: InvitationTemplate, event, guest) -> str:
 
     context = build_placeholder_context(event, guest)
 
-    try:
-        return template.body_text.format(**context)
+    allowed = set(_all_placeholder_keys(template))
+    unknown = _extract_used_placeholders(template.body_text) - allowed
 
-    except KeyError as error:
+    if unknown:
         raise InvitationError(
-            f"This template uses an unknown placeholder: {{{error.args[0]}}}. "
+            f"This template uses an unknown placeholder: "
+            f"{', '.join('{' + p + '}' for p in sorted(unknown))}. "
             f"Supported placeholders: {', '.join(InvitationTemplate.PLACEHOLDER_FIELDS)}.",
             code="invalid_placeholder",
         )
+
+    return substitute_placeholders(template.body_text, context)
 
 
 def preview_template(template: InvitationTemplate, event, guest) -> dict:
@@ -163,14 +210,6 @@ def preview_template(template: InvitationTemplate, event, guest) -> dict:
 # ---------------------------------------------------------------------------
 # Invitation image rendering
 # ---------------------------------------------------------------------------
-
-class _SafeDict(dict):
-    """format_map helper: an unknown {placeholder} stays as typed instead
-    of raising KeyError."""
-
-    def __missing__(self, key):
-        return "{" + key + "}"
-
 
 # Fonts committed with the project (backend/invitations/fonts/) are tried
 # first, so rendering looks the same on any server - including hosts that
@@ -199,7 +238,17 @@ def _load_font(file_name: str | None, weight: int | None, size: int, bold_fallba
     candidates = []
 
     if file_name:
-        candidates.append(str(_FONT_DIR / file_name))
+        font_path = _FONT_DIR / file_name
+
+        if not font_path.exists():
+            logger.warning(
+                "Invitation font %s is missing from %s - the card falls back to "
+                "DejaVu. Download the fonts into that folder.",
+                file_name,
+                _FONT_DIR,
+            )
+
+        candidates.append(str(font_path))
 
     candidates += _FALLBACK_BOLD if bold_fallback else _FALLBACK_REGULAR
 
@@ -293,7 +342,11 @@ def _open_background(template: InvitationTemplate) -> Image.Image:
     with template.background_image.open("rb") as background_file:
         data = background_file.read()
 
-    return Image.open(io.BytesIO(data)).convert("RGB")
+    image = Image.open(io.BytesIO(data))
+    # Reduce very large pictures before decoding fully to RGB.
+    image.thumbnail((MAX_RENDER_EDGE, MAX_RENDER_EDGE), Image.LANCZOS)
+
+    return image.convert("RGB")
 
 
 def _pick_text_color(background: Image.Image, chosen: str | None) -> tuple[int, int, int]:
@@ -322,7 +375,7 @@ def _compose_invitation_image(
 
     The organizer's font colour and font style (context["text_color"],
     context["font_style"]) are honoured. Without body_text a designed
-    default layout is drawn: "YOU ARE INVITED", guest name, big event
+    default layout is drawn: "Hi <guest name>,", "YOU ARE INVITED", big event
     title, a divider and then Date / Time / Venue blocks (plus the
     template's custom fields). With body_text, that text (placeholders
     filled) is drawn instead, in the chosen font and colour.
@@ -352,18 +405,22 @@ def _compose_invitation_image(
     body_lh = _line_height(draw, fonts["body"])
 
     if template.body_text:
-        rendered = template.body_text.format_map(_SafeDict(context))
+        rendered = substitute_placeholders(template.body_text, context)
 
         for line in _wrap_text(draw, rendered, fonts["body"], max_text_width):
             rows.append(("text", line, fonts["body"], 0 if line else int(body_lh * 0.4)))
 
     else:
-        rows.append(("label", "YOU ARE INVITED", fonts["label"], int(height * 0.022)))
-
+        # The greeting sits at the very top. The name is the guest this
+        # copy of the card is being made for, so every guest gets their own
+        # "Hi <name>," when the invitation is sent.
         guest_name = str(context.get("guest_name", "")).strip()
 
         if guest_name:
-            rows.append(("text", f"Dear {guest_name},", fonts["name"], int(height * 0.018)))
+            for line in _wrap_text(draw, f"Hi {guest_name},", fonts["name"], max_text_width):
+                rows.append(("text", line, fonts["name"], int(height * 0.012)))
+
+        rows.append(("label", "YOU ARE INVITED", fonts["label"], int(height * 0.022)))
 
         title = str(context.get("event_name", ""))
         title_font = fonts["title"]
@@ -526,6 +583,7 @@ def build_active_template_preview(active: ActiveFilledTemplate, guest_name: str 
             content = render_active_template_image(active, guest_name, max_width=720)
             image = "data:image/jpeg;base64," + base64.b64encode(content.read()).decode("ascii")
         except Exception:
+            logger.exception("Could not render the preview card for template %s", template.id)
             image = None
 
     return {
@@ -544,10 +602,7 @@ def get_or_create_invitation(event, guest, template_id, organizer) -> Invitation
     (send_active_template_to_guest in notifications) does not call this.
     """
 
-    template = InvitationTemplate.objects.filter(
-        pk=template_id,
-        is_active=True,
-    ).first()
+    template = visible_templates_for(organizer).filter(pk=template_id).first()
 
     if template is None:
         raise InvitationError(
@@ -623,8 +678,12 @@ def upload_custom_template(organizer, validated_data: dict) -> InvitationTemplat
 
     validated_data may include custom_fields (a list of {field_key,
     label} dicts) - these are created as TemplateCustomField rows right
-    after the template itself.
+    after the template itself. The organizer row is locked while the
+    plan's template limit is checked and the template + its library slot
+    are created, so two simultaneous uploads cannot exceed the limit.
     """
+
+    from .models import TemplateCustomField
 
     draft_template = InvitationTemplate(
         name=validated_data["name"],
@@ -635,37 +694,100 @@ def upload_custom_template(organizer, validated_data: dict) -> InvitationTemplat
         is_custom=True,
     )
 
-    try:
-        check_template_limit(organizer, draft_template)
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().get(pk=organizer.pk)
 
-    except LimitExceededError as error:
-        raise InvitationError(error.message, code=error.code)
+        try:
+            check_template_limit(organizer, draft_template)
 
-    template = InvitationTemplate.objects.create(
-        name=validated_data["name"],
-        description=validated_data.get("description", ""),
-        channel=validated_data["channel"],
-        body_text=validated_data.get("body_text", ""),
-        preview_image=validated_data.get("preview_image"),
-        background_image=validated_data.get("background_image"),
-        owner=organizer,
-        is_custom=True,
-        is_active=True,
-    )
+        except LimitExceededError as error:
+            raise InvitationError(error.message, code=error.code)
 
-    from .models import TemplateCustomField
-
-    for index, field in enumerate(validated_data.get("custom_fields", [])):
-        TemplateCustomField.objects.create(
-            template=template,
-            field_key=field["field_key"],
-            label=field["label"],
-            display_order=index,
+        template = InvitationTemplate.objects.create(
+            name=validated_data["name"],
+            description=validated_data.get("description", ""),
+            channel=validated_data["channel"],
+            body_text=validated_data.get("body_text", ""),
+            preview_image=validated_data.get("preview_image"),
+            background_image=validated_data.get("background_image"),
+            owner=organizer,
+            is_custom=True,
+            is_active=True,
         )
 
-    add_template_to_library(organizer, template)
+        TemplateCustomField.objects.bulk_create(
+            [
+                TemplateCustomField(
+                    template=template,
+                    field_key=field["field_key"],
+                    label=field["label"],
+                    display_order=index,
+                )
+                for index, field in enumerate(validated_data.get("custom_fields", []))
+            ]
+        )
+
+        add_template_to_library(organizer, template)
 
     return template
+
+
+def _delete_stored_file(file_field) -> None:
+    """Best-effort removal of a stored image (never breaks a request)."""
+
+    if not file_field:
+        return
+
+    try:
+        file_field.storage.delete(file_field.name)
+
+    except Exception:  # noqa: BLE001 - storage errors must not fail the API call
+        logger.warning("Could not delete stored file %s", file_field.name, exc_info=True)
+
+
+def delete_custom_template(organizer, template_id: int) -> str:
+    """Remove one of the organizer's OWN uploaded templates.
+
+    * It disappears from their library, which frees a template slot.
+    * If it is their active filled template, that is deselected.
+    * If invitations were already generated from it (Invitation.template is
+      PROTECT) the row is kept but hidden (is_active=False) so those records
+      stay valid; otherwise the template and its images are deleted.
+
+    Returns "deleted" or "deactivated". Platform templates and other
+    organizers' templates are reported as not found.
+    """
+
+    template = InvitationTemplate.objects.filter(
+        pk=template_id,
+        owner=organizer,
+        is_custom=True,
+    ).first()
+
+    if template is None:
+        raise InvitationError(
+            "No custom template found with this ID.",
+            code="template_not_found",
+        )
+
+    preview_image = template.preview_image
+    background_image = template.background_image
+
+    with transaction.atomic():
+        ActiveFilledTemplate.objects.filter(organizer=organizer, template=template).delete()
+        OrganizerTemplateLibrary.objects.filter(organizer=organizer, template=template).delete()
+
+        if template.invitations.exists():
+            template.is_active = False
+            template.save(update_fields=["is_active", "updated_at"])
+            return "deactivated"
+
+        template.delete()
+
+    _delete_stored_file(preview_image)
+    _delete_stored_file(background_image)
+
+    return "deleted"
 
 
 # ---------------------------------------------------------------------------
@@ -725,7 +847,7 @@ def fill_active_template(organizer, template_id: int, event_id: int, standard_va
 
     from events.models import Event
 
-    template = InvitationTemplate.objects.filter(pk=template_id, is_active=True).first()
+    template = visible_templates_for(organizer).filter(pk=template_id).first()
 
     if template is None:
         raise InvitationError(
@@ -792,26 +914,31 @@ def fill_active_template(organizer, template_id: int, event_id: int, standard_va
                 code="invalid_placeholder",
             )
 
+        rendered_preview_text = substitute_placeholders(template.body_text, full_context)
+
+    with transaction.atomic():
+        # Lock the organizer so the template-limit check and the library slot
+        # it consumes cannot be raced by a second request.
+        get_user_model().objects.select_for_update().get(pk=organizer.pk)
+
         try:
-            rendered_preview_text = template.body_text.format(**full_context)
-        except KeyError as error:
-            raise InvitationError(
-                f"This template uses an unknown placeholder: {{{error.args[0]}}}.",
-                code="invalid_placeholder",
-            )
+            check_template_limit(organizer, template)
 
-    add_template_to_library(organizer, template)
+        except LimitExceededError as error:
+            raise InvitationError(error.message, code=error.code)
 
-    active, _created = ActiveFilledTemplate.objects.update_or_create(
-        organizer=organizer,
-        defaults={
-            "template": template,
-            "event": event,
-            "standard_values": merged_standard,
-            "custom_values": {k: custom_values[k] for k in required_custom_keys},
-            "rendered_preview_text": rendered_preview_text,
-        },
-    )
+        add_template_to_library(organizer, template)
+
+        active, _created = ActiveFilledTemplate.objects.update_or_create(
+            organizer=organizer,
+            defaults={
+                "template": template,
+                "event": event,
+                "standard_values": merged_standard,
+                "custom_values": {k: custom_values[k] for k in required_custom_keys},
+                "rendered_preview_text": rendered_preview_text,
+            },
+        )
 
     return active
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,34 @@ export default function BulkSendDialog({
     onDone();
   };
 
+  // Escape closes the dialog (never while a run is in progress), and the
+  // browser warns before the tab is closed mid-send.
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isRunning) return;
+      if (phase === "done") handleDone();
+      else handleClose();
+    };
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isRunning, phase]);
+
+  useEffect(() => {
+    if (!isRunning) return;
+
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [isRunning]);
+
   const percent =
     progress && progress.total > 0
       ? Math.min(100, Math.round((progress.processed / progress.total) * 100))
@@ -77,7 +105,7 @@ export default function BulkSendDialog({
           <button
             type="button"
             onClick={phase === "done" ? handleDone : handleClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -119,7 +147,7 @@ export default function BulkSendDialog({
             </span>
           </label>
 
-          <div className="flex gap-3 pt-1">
+          <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row">
             <Button variant="outline" className="flex-1" onClick={handleClose}>
               Cancel
             </Button>
@@ -211,7 +239,7 @@ export default function BulkSendDialog({
             <div className="max-h-48 space-y-1.5 overflow-y-auto rounded-2xl border border-slate-100 p-3">
               {progress.issues.slice(0, 50).map((item) => (
                 <div key={item.guest_id} className="flex items-start justify-between gap-3 text-xs">
-                  <span className="font-medium text-[var(--brand-navy)]">{item.guest_name}</span>
+                  <span className="min-w-0 truncate font-medium text-[var(--brand-navy)]">{item.guest_name}</span>
                   <span
                     className={cn(
                       "text-right",
@@ -238,7 +266,7 @@ export default function BulkSendDialog({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label={`Send via ${meta.label}`}>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -254,7 +282,7 @@ export default function BulkSendDialog({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 16, scale: 0.98 }}
                 transition={{ duration: 0.15 }}
-                className="premium-card relative max-h-[90vh] w-full max-w-lg overflow-y-auto"
+                className="premium-card relative max-h-[90dvh] w-full max-w-lg overflow-y-auto"
               >
                 {content}
               </motion.div>
@@ -265,7 +293,7 @@ export default function BulkSendDialog({
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="mobile-safe-bottom absolute inset-x-0 bottom-0 max-h-[92vh] overflow-y-auto rounded-t-3xl bg-white"
+              className="mobile-safe-bottom absolute inset-x-0 bottom-0 max-h-[92dvh] overflow-y-auto rounded-t-3xl bg-white"
             >
               {content}
             </motion.div>

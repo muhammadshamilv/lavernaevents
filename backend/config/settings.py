@@ -30,7 +30,9 @@ SECRET_KEY = config(
     default="django-insecure-development-only-change-this",
 )
 
-DEBUG = config("DJANGO_DEBUG", default=True, cast=bool)
+# Secure by default: a deployment that forgets to set DJANGO_DEBUG runs in
+# production mode. Local development sets DJANGO_DEBUG=True in backend/.env.
+DEBUG = config("DJANGO_DEBUG", default=False, cast=bool)
 
 if not DEBUG and SECRET_KEY.startswith(("django-insecure", "replace-this")):
     raise ImproperlyConfigured(
@@ -92,6 +94,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "common.middleware.RejectNullBytesMiddleware",
     # Serves the collected static files (Django admin CSS/JS) in production.
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
@@ -102,6 +105,10 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# Django admin lives at /<DJANGO_ADMIN_URL>/ (see config/urls.py). Set it to
+# something non-obvious in production, e.g. "manage-7f3k/".
+DJANGO_ADMIN_URL = config("DJANGO_ADMIN_URL", default="admin/").strip("/") + "/"
 
 # --------------------------------------------------
 # URLs
@@ -331,7 +338,89 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": (
         "common.exceptions.custom_exception_handler"
     ),
+
+    # Rate limiting: see common/throttling.py for which view gets which rule.
+    "DEFAULT_THROTTLE_CLASSES": (
+        "common.throttling.RouteThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        # Catch-all limits per client IP (anonymous) / per user (signed in).
+        "anon": config("THROTTLE_ANON", default="120/min"),
+        "user": config("THROTTLE_USER", default="600/min"),
+        # Auth endpoints (per IP).
+        "login": config("THROTTLE_LOGIN", default="10/min"),
+        "register": config("THROTTLE_REGISTER", default="10/hour"),
+        "otp": config("THROTTLE_OTP", default="10/min"),
+        "password_reset": config("THROTTLE_PASSWORD_RESET", default="5/hour"),
+        "refresh": config("THROTTLE_REFRESH", default="60/min"),
+        # Per mobile number, so many IPs cannot hammer one account.
+        "login_ident": config("THROTTLE_LOGIN_IDENT", default="10/10min"),
+        "otp_ident": config("THROTTLE_OTP_IDENT", default="20/hour"),
+        "password_reset_ident": config("THROTTLE_PASSWORD_RESET_IDENT", default="5/hour"),
+        # Public guest pages (per IP).
+        "guest_public": config("THROTTLE_GUEST_PUBLIC", default="60/min"),
+        "selfie": config("THROTTLE_SELFIE", default="6/min"),
+        "selfie_hour": config("THROTTLE_SELFIE_HOUR", default="40/hour"),
+        "download": config("THROTTLE_DOWNLOAD", default="60/min"),
+        # Signed-in organiser actions that cost money or CPU (per user).
+        "upload": config("THROTTLE_UPLOAD", default="30/min"),
+        "send": config("THROTTLE_SEND", default="30/min"),
+    },
 }
+
+if not DEBUG:
+    # No browsable API in production: JSON only.
+    REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = (
+        "rest_framework.renderers.JSONRenderer",
+    )
+
+# --------------------------------------------------
+# Client IP / proxy trust (used by rate limiting)
+# --------------------------------------------------
+# Production path:  browser -> Cloudflare Pages Function -> Render -> Django.
+# Django only ever sees Cloudflare's servers, so the Pages Function forwards
+# the real visitor IP in X-Client-IP together with a shared secret. Django
+# trusts X-Client-IP ONLY when that secret matches, so nobody can fake their
+# IP by calling the Render URL directly.
+#   Pages:  PROXY_SHARED_SECRET  (Variables and Secrets)
+#   Render: PROXY_SHARED_SECRET  (same value)
+PROXY_SHARED_SECRET = config("PROXY_SHARED_SECRET", default="")
+
+# Fallback when the secret is not set: how many reverse proxies sit in front
+# of Django (Render adds one). 0 = trust nothing, use the socket address.
+TRUSTED_PROXY_COUNT = config("TRUSTED_PROXY_COUNT", default=0 if DEBUG else 1, cast=int)
+
+# --------------------------------------------------
+# Cache (rate-limit counters live here)
+# --------------------------------------------------
+# Without REDIS_URL each gunicorn worker counts separately, so the effective
+# limit is (rate x workers). Fine for one worker; set REDIS_URL (Render Key
+# Value / Upstash) to share the counters between workers and restarts.
+
+REDIS_URL = config("REDIS_URL", default="")
+
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "laverna-default",
+        }
+    }
+
+# --------------------------------------------------
+# Upload limits
+# --------------------------------------------------
+# Form fields / JSON bodies (files are NOT counted here).
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+# Uploads bigger than this are streamed to a temp file instead of RAM.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 # --------------------------------------------------
 # JWT
@@ -385,9 +474,16 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "same-origin"
+    SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+    X_FRAME_OPTIONS = "DENY"
+
     # Leave 0 while on *.onrender.com / *.pages.dev. Raise it (for example
     # 31536000) only once you are on your own domain with HTTPS everywhere.
     SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0, cast=int)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+    SECURE_HSTS_PRELOAD = False
 
 # --------------------------------------------------
 # Email

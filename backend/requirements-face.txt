@@ -1,3 +1,11 @@
+# Face recognition ("find my photos" selfie search). Heavy: dlib is compiled
+# from source, which needs cmake and a C++ compiler, and takes several minutes.
+# Install cmake FIRST, then this file:
+#     pip install cmake
+#     pip install -r requirements-face.txt
 numpy==2.2.1
 dlib==19.24.6
 face_recognition==1.3.0
+face_recognition_models==0.3.0
+# face_recognition_models still imports pkg_resources, removed in newer setuptools.
+setuptools<81

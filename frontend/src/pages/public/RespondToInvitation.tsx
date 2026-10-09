@@ -12,6 +12,7 @@ import {
   HelpCircle,
   MapPin,
   Navigation,
+  Pencil,
   Sparkles,
   XCircle,
 } from "lucide-react";
@@ -213,10 +214,17 @@ function ParticleShapeView({ shape, size, color }: { shape: ParticleShape; size:
 function ThemeParticles({ theme }: { theme: Theme }) {
   const reduceMotion = useReducedMotion();
 
+  // Phones (especially low-end Android) struggle with dozens of animated
+  // layers, so they get about a third of the particles.
+  const isSmallScreen = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches,
+    []
+  );
+
   const items = useMemo(
     () =>
       PARTICLES_BY_THEME[theme.key].flatMap((config, configIndex) =>
-        Array.from({ length: config.count }, (_, index) => {
+        Array.from({ length: isSmallScreen ? Math.ceil(config.count / 3) : config.count }, (_, index) => {
           const seed = index + configIndex * 100;
 
           return {
@@ -233,7 +241,7 @@ function ThemeParticles({ theme }: { theme: Theme }) {
           };
         })
       ),
-    [theme]
+    [theme, isSmallScreen]
   );
 
   if (reduceMotion) return null;
@@ -415,6 +423,12 @@ function SectionTitle({ children, theme }: { children: ReactNode; theme: Theme }
   );
 }
 
+/** Only plain http(s) links are allowed into an href (blocks javascript: links). */
+function safeHttpUrl(value: string | null | undefined): string {
+  const trimmed = (value ?? "").trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : "";
+}
+
 function splitDate(dateStr: string) {
   const date = new Date(`${dateStr}T00:00:00`);
 
@@ -444,6 +458,9 @@ export default function RespondToInvitation() {
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selected, setSelected] = useState<"ACCEPTED" | "MAYBE" | "REJECTED" | null>(null);
+  // A guest who already answered can open the choices again to change it.
+  const [changing, setChanging] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   const handleRespond = (value: "ACCEPTED" | "MAYBE" | "REJECTED") => {
     setSelected(value);
@@ -452,6 +469,7 @@ export default function RespondToInvitation() {
     submitMutation.mutate(
       { response: value },
       {
+        onSuccess: () => setChanging(false),
         onError: (err) => {
           setSubmitError(getApiErrorMessage(err, "Couldn't submit your response. Please try again."));
           setSelected(null);
@@ -463,7 +481,7 @@ export default function RespondToInvitation() {
   if (isLoading) {
     return (
       <div
-        className="flex min-h-screen items-center justify-center px-4 py-10"
+        className="flex min-h-dvh items-center justify-center px-4 py-10"
         style={{ background: THEMES.festive.background }}
       >
         <div className="w-full max-w-md space-y-4">
@@ -481,7 +499,7 @@ export default function RespondToInvitation() {
 
     return (
       <div
-        className="flex min-h-screen items-center justify-center px-4 py-10"
+        className="flex min-h-dvh items-center justify-center px-4 py-10"
         style={{ background: THEMES.festive.background }}
       >
         <div className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
@@ -498,18 +516,21 @@ export default function RespondToInvitation() {
   const theme = themeFor(invitation.event_type);
   const cardImage = resolveMediaUrl(invitation.invitation_image);
   const coverImage = resolveMediaUrl(invitation.cover_image);
+  const coverCss = coverImage ? encodeURI(coverImage).replace(/[()'"]/g, encodeURIComponent) : "";
 
-  const alreadyResponded = invitation.already_responded || submitMutation.isSuccess;
   const currentStatus: GuestResponseStatus =
-    submitMutation.isSuccess && selected ? selected : invitation.response_status;
+    submitMutation.data?.response_status ?? invitation.response_status;
+  const alreadyResponded = currentStatus !== "PENDING";
+  const showThanks = alreadyResponded && !changing;
   const statusCopy = STATUS_COPY[currentStatus];
+  const responsesOpen = invitation.responses_open;
 
   const date = splitDate(invitation.event_date);
   const timeText = invitation.time_text || formatEventTime(invitation.event_time);
   const hostName = invitation.host_name;
 
   const mapsUrl =
-    invitation.google_maps_link ||
+    safeHttpUrl(invitation.google_maps_link) ||
     (invitation.venue_name || invitation.address
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
           [invitation.venue_name, invitation.address].filter(Boolean).join(", ")
@@ -521,7 +542,7 @@ export default function RespondToInvitation() {
 
   return (
     <div
-      className="relative min-h-screen overflow-x-hidden"
+      className="relative min-h-dvh overflow-x-hidden"
       style={{ background: theme.background, fontFamily: FONT_FAMILY.sans }}
     >
       <ThemeParticles theme={theme} />
@@ -580,6 +601,15 @@ export default function RespondToInvitation() {
           </motion.p>
         </div>
 
+        {invitation.is_cancelled && (
+          <div
+            role="alert"
+            className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-700"
+          >
+            This event has been cancelled. Please check with the host for details.
+          </div>
+        )}
+
         {/* ---------------- Invitation card ---------------- */}
         <div className="mt-8" style={{ perspective: 1200 }}>
           <motion.div
@@ -599,8 +629,8 @@ export default function RespondToInvitation() {
               <div
                 className="relative flex aspect-[4/5] w-full flex-col items-center justify-center px-8 text-center text-white"
                 style={{
-                  background: coverImage
-                    ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url(${coverImage}) center/cover`
+                  background: coverCss
+                    ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url("${coverCss}") center/cover`
                     : `linear-gradient(145deg, ${theme.accent}, ${theme.accentDark})`,
                 }}
               >
@@ -622,6 +652,7 @@ export default function RespondToInvitation() {
             )}
 
             {/* slow shimmer sweep across the card */}
+            {!reduceMotion && (
             <motion.div
               aria-hidden="true"
               className="pointer-events-none absolute inset-y-0 w-1/3 -skew-x-12"
@@ -632,6 +663,7 @@ export default function RespondToInvitation() {
               animate={{ left: "140%" }}
               transition={{ duration: 2.2, delay: 1.6, repeat: Infinity, repeatDelay: 5.5, ease: "easeInOut" }}
             />
+            )}
           </motion.div>
         </div>
 
@@ -737,7 +769,7 @@ export default function RespondToInvitation() {
             <SectionTitle theme={theme}>Will you join us?</SectionTitle>
 
             <AnimatePresence mode="wait">
-              {alreadyResponded ? (
+              {showThanks ? (
                 <motion.div
                   key="thanks"
                   initial={{ opacity: 0, scale: 0.9 }}
@@ -760,11 +792,37 @@ export default function RespondToInvitation() {
                   {statusCopy.message && (
                     <p className="mt-1 max-w-xs text-sm text-slate-500">{statusCopy.message}</p>
                   )}
+                  {responsesOpen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubmitError(null);
+                        setChanging(true);
+                      }}
+                      className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 text-sm font-semibold underline-offset-4 active:opacity-70"
+                      style={{ color: theme.accent }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Change my response
+                    </button>
+                  )}
+                </motion.div>
+              ) : !responsesOpen ? (
+                <motion.div key="closed" className="mt-5 text-center">
+                  <p className="text-sm text-slate-500">
+                    {invitation.is_cancelled
+                      ? "Responses are closed because this event was cancelled."
+                      : "Responses are closed for this event."}
+                  </p>
                 </motion.div>
               ) : (
                 <motion.div key="choices" exit={{ opacity: 0, scale: 0.96 }} className="mt-4">
                   <p className="text-center text-sm text-slate-500">
-                    {hostName ? `${hostName} would love to know.` : "The host would love to know."}
+                    {changing
+                      ? "Plans changed? Pick your new answer."
+                      : hostName
+                        ? `${hostName} would love to know.`
+                        : "The host would love to know."}
                   </p>
 
                   {submitError && (
@@ -773,7 +831,7 @@ export default function RespondToInvitation() {
                     </p>
                   )}
 
-                  <div className="mt-5 space-y-3">
+                  <div className="mt-5 space-y-3" aria-busy={submitMutation.isPending}>
                     {RESPONSE_OPTIONS.map((option, index) => {
                       const isPending = submitMutation.isPending && selected === option.value;
 
@@ -788,9 +846,10 @@ export default function RespondToInvitation() {
                           viewport={{ once: true }}
                           transition={{ duration: 0.45, delay: 0.1 + index * 0.1 }}
                           whileTap={{ scale: 0.97 }}
+                          aria-pressed={changing && currentStatus === option.value}
                           className="group flex w-full items-center gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition-all disabled:opacity-60"
                           style={{
-                            borderColor: `${option.color}40`,
+                            borderColor: changing && currentStatus === option.value ? option.color : `${option.color}40`,
                             background: `${option.color}0d`,
                           }}
                         >
@@ -814,6 +873,17 @@ export default function RespondToInvitation() {
                       );
                     })}
                   </div>
+
+                  {changing && (
+                    <button
+                      type="button"
+                      disabled={submitMutation.isPending}
+                      onClick={() => setChanging(false)}
+                      className="mx-auto mt-4 flex min-h-11 items-center px-4 text-sm font-medium text-slate-500 active:opacity-70"
+                    >
+                      Keep my current answer
+                    </button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -830,7 +900,7 @@ export default function RespondToInvitation() {
 
             <div className="mt-4 grid gap-3">
               <a
-                href={invitation.google_calendar_url}
+                href={safeHttpUrl(invitation.google_calendar_url) || undefined}
                 target="_blank"
                 rel="noreferrer"
                 className={cn(
@@ -843,7 +913,7 @@ export default function RespondToInvitation() {
               </a>
 
               <a
-                href={invitation.calendar_url}
+                href={safeHttpUrl(invitation.calendar_url) || undefined}
                 className="flex items-center justify-center gap-2 rounded-2xl border-2 py-3.5 text-sm font-semibold transition-colors active:scale-[0.98]"
                 style={{ borderColor: `${theme.accent}55`, color: theme.accent }}
               >

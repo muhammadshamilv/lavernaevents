@@ -1,6 +1,12 @@
+from django.db.models import Q
+from django.utils import timezone
 from events.models import Event
 
 from .models import PhotographerEventAccess
+
+# More than this many people with live access to one gallery is almost
+# certainly a mistake (or a shared link being passed around).
+MAX_ACTIVE_PHOTOGRAPHERS_PER_EVENT = 20
 
 
 class PhotographerAccessError(Exception):
@@ -12,15 +18,61 @@ class PhotographerAccessError(Exception):
         super().__init__(message)
 
 
+def _valid_grants():
+    """Grants that are switched on AND not past their expiry - one query."""
+
+    return PhotographerEventAccess.objects.filter(is_active=True).filter(
+        Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+    )
+
+
+def ensure_photographer_access_allowed(organizer) -> None:
+    """Inviting photographers is a plan feature."""
+
+    from memberships.utils import get_effective_plan
+
+    plan = get_effective_plan(organizer)
+
+    if plan is None:
+        raise PhotographerAccessError(
+            "You need an active plan to invite photographers.",
+            code="no_active_plan",
+        )
+
+    if not plan.photographer_access_enabled:
+        raise PhotographerAccessError(
+            "Photographer access is not included in your current plan. Upgrade to invite photographers.",
+            code="photographer_access_not_enabled",
+        )
+
+
 def grant_access(event: Event, photographer, granted_by, expires_at=None) -> PhotographerEventAccess:
     """Grant (or re-activate) a photographer's access to an event.
 
-    If a grant already exists for this (event, photographer) pair - even a
-    previously revoked one - it's reused and reactivated rather than
-    creating a second row, since the model enforces one grant per pair via
-    a unique constraint. This also means re-granting after a revoke
-    naturally "just works" without the organizer hitting a duplicate error.
+    A grant that already exists for this (event, photographer) pair - even
+    a revoked one - is reused and reactivated rather than creating a second
+    row (the model enforces one grant per pair).
     """
+
+    if expires_at is not None and expires_at <= timezone.now():
+        raise PhotographerAccessError(
+            "The access end time must be in the future.",
+            code="invalid_expiry",
+        )
+
+    ensure_photographer_access_allowed(granted_by)
+
+    already_valid = _valid_grants().filter(event=event, photographer=photographer).exists()
+
+    if (
+        not already_valid
+        and _valid_grants().filter(event=event).count() >= MAX_ACTIVE_PHOTOGRAPHERS_PER_EVENT
+    ):
+        raise PhotographerAccessError(
+            f"An event can have at most {MAX_ACTIVE_PHOTOGRAPHERS_PER_EVENT} photographers with access. "
+            "Revoke someone first.",
+            code="too_many_photographers",
+        )
 
     grant, _created = PhotographerEventAccess.objects.update_or_create(
         event=event,
@@ -36,46 +88,34 @@ def grant_access(event: Event, photographer, granted_by, expires_at=None) -> Pho
 
 
 def revoke_access(grant: PhotographerEventAccess) -> PhotographerEventAccess:
-    """Revoke a photographer's access to an event. Does not delete the record,
-    so the organizer retains a history of who had access and can re-grant
-    later without losing the original grant date."""
+    """Revoke a photographer's access to an event. The record is kept, so
+    the organizer retains a history and can re-grant later."""
 
-    grant.is_active = False
-    grant.save(update_fields=["is_active", "updated_at"])
+    if grant.is_active:
+        grant.is_active = False
+        grant.save(update_fields=["is_active", "updated_at"])
 
     return grant
 
 
 def get_events_for_photographer(photographer):
-    """Return the events this photographer currently has valid access to.
+    """The grants this photographer can use right now, nearest event first."""
 
-    Filters at the database level for is_active=True (cheap), then filters
-    again in Python for the expiry check via is_currently_valid() (there's
-    no clean single-query way to express "expires_at is null OR expires_at
-    > now" alongside the is_active check without a slightly awkward Q
-    object, and the grant list per photographer is small, so the simpler
-    two-step filter is preferred here over query cleverness).
-    """
-
-    grants = PhotographerEventAccess.objects.filter(
-        photographer=photographer,
-        is_active=True,
-    ).select_related("event")
-
-    return [grant for grant in grants if grant.is_currently_valid()]
+    return list(
+        _valid_grants()
+        .filter(photographer=photographer)
+        .select_related("event")
+        .order_by("event__event_date", "event__event_time", "id")
+    )
 
 
 def check_photographer_event_access(photographer, event: Event) -> PhotographerEventAccess:
     """Raise PhotographerAccessError unless this photographer currently has
-    valid access to this event. Returns the grant on success, for callers
-    that need it (e.g. to know who granted it)."""
+    valid access to this event. Returns the grant on success."""
 
-    grant = PhotographerEventAccess.objects.filter(
-        photographer=photographer,
-        event=event,
-    ).first()
+    grant = _valid_grants().filter(photographer=photographer, event=event).first()
 
-    if grant is None or not grant.is_currently_valid():
+    if grant is None:
         raise PhotographerAccessError(
             "You do not have access to this event's gallery.",
             code="no_access",

@@ -45,25 +45,29 @@ const CHANNEL_LABEL: Record<InvitationChannelKey, string> = {
 };
 
 function formatEventDateShort(value: string): string {
-  const date = new Date(value);
+  // "YYYY-MM-DD" alone is read as UTC midnight, which can show the
+  // previous day west of UTC; pin it to local midnight instead.
+  const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
 /**
- * Phase 25: replaces Portal.tsx as the portal's landing dashboard - same
- * base shell (gradient header, stat tiles, quota usage, quick actions,
- * recent events) extended with invitation-focused data: a per-channel
- * send/failure chart and a prioritized "events needing attention" list,
- * both driven by one combined backend call
- * (useOrganizerInvitationOverview) instead of the old single
- * useOrganizerOverview call.
+ * The portal's landing dashboard: gradient header, stat tiles, quota
+ * usage, a per-channel send/failure chart, a prioritized "needs attention"
+ * list, quick actions and recent events. The stats come from one combined
+ * backend call (useOrganizerInvitationOverview).
  */
 export default function PortalDashboard() {
   const { user } = useAuthStore();
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
-  const { data: overview, isLoading: overviewLoading } = useOrganizerInvitationOverview();
+  const {
+    data: overview,
+    isLoading: overviewLoading,
+    isError: overviewError,
+    refetch: refetchOverview,
+  } = useOrganizerInvitationOverview();
   const { data: eventsPage, isLoading: eventsLoading } = useEvents(1);
   const recentEvents = (eventsPage?.events ?? []).slice(0, 3);
 
@@ -83,6 +87,7 @@ export default function PortalDashboard() {
     : [];
 
   const attentionEvents = overview?.events_needing_attention ?? [];
+  const waitingReminders = overview?.pending_whatsapp_reminders ?? 0;
 
   return (
     <div className="mobile-safe-bottom overflow-hidden px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
@@ -114,6 +119,22 @@ export default function PortalDashboard() {
         </div>
 
         <div className="mt-5 sm:mt-6">
+          {overviewError && (
+            <div
+              role="alert"
+              className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            >
+              <span>Couldn't load your dashboard numbers.</span>
+              <button
+                type="button"
+                onClick={() => refetchOverview()}
+                className="min-h-10 rounded-full px-3 font-semibold underline underline-offset-4"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {statTiles.map((tile) => (
               <Card key={tile.label} className="p-4 sm:p-5">
@@ -132,12 +153,12 @@ export default function PortalDashboard() {
             ))}
           </div>
 
-          {/* Phase 17: invitation/template/voice-call quota usage. */}
+          {/* Invitation / template / voice-call quota usage. */}
           <div className="mt-5 sm:mt-6">
             <UsageOverview />
           </div>
 
-          {/* Phase 25: per-channel performance chart. */}
+          {/* Per-channel performance chart. */}
           <div className="mt-8">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Channel performance
@@ -150,7 +171,13 @@ export default function PortalDashboard() {
                   No sends yet - this chart fills in once you start sending invitations.
                 </p>
               ) : (
-                <div className="h-64 w-full">
+                <div
+                  className="h-64 w-full"
+                  role="img"
+                  aria-label={`Messages sent and failed per channel: ${chartData
+                    .map((row) => `${row.channel} ${row.Sent} sent, ${row.Failed} failed`)
+                    .join("; ")}`}
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#EEF0F4" vertical={false} />
@@ -167,7 +194,19 @@ export default function PortalDashboard() {
             </Card>
           </div>
 
-          {/* Phase 25: events needing attention. */}
+          {/* WhatsApp reminders are sent by the organizer tapping a link, so
+              they pile up until someone acts - surface the total. */}
+          {!overviewLoading && waitingReminders > 0 && (
+            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <AlarmClock className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                {waitingReminders} WhatsApp reminder{waitingReminders === 1 ? " is" : "s are"} waiting
+                for you to send. Open the event's invitations page to send them.
+              </p>
+            </div>
+          )}
+
+          {/* Events needing attention. */}
           {!overviewLoading && attentionEvents.length > 0 && (
             <div className="mt-8">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -189,7 +228,7 @@ export default function PortalDashboard() {
                         </p>
                         <p className="mt-0.5 truncate text-xs text-slate-500">
                           {formatEventDateShort(event.event_date)} &middot;{" "}
-                          {event.pending_count} of {event.total_guests} pending
+                          {event.pending_count} of {event.total_guests} invited guests pending
                           {event.pending_whatsapp_reminders > 0 &&
                             ` · ${event.pending_whatsapp_reminders} WhatsApp reminder${event.pending_whatsapp_reminders === 1 ? "" : "s"} waiting`}
                         </p>

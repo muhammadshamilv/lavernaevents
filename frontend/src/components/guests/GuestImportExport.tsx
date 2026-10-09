@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, Contact, Download, Upload, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Contact, Download, FileText, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { exportGuestsCsv } from "@/api/guests.api";
 import { useImportGuestsCsvMutation } from "@/queries/useGuestQueries";
@@ -25,6 +25,21 @@ export default function GuestImportExport({ eventId }: GuestImportExportProps) {
     fileInputRef.current?.click();
   };
 
+  const handleSampleDownload = () => {
+    const sample =
+      "name,mobile_number,email,category,family_member_count,notes\n" +
+      "Anjali Sharma,9876543210,anjali@example.com,Family,4,Vegetarian\n" +
+      "Rohan Mehta,9123456780,,Friends,2,\n";
+    const url = URL.createObjectURL(new Blob([sample], { type: "text/csv" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "guest-list-sample.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -32,6 +47,11 @@ export default function GuestImportExport({ eventId }: GuestImportExportProps) {
 
     setImportResult(null);
     setImportError(null);
+
+    if (file.size > 2 * 1024 * 1024) {
+      setImportError("That file is too large. The CSV must be 2 MB or smaller.");
+      return;
+    }
 
     importMutation.mutate({ file }, {
       onSuccess: (result) => setImportResult(result),
@@ -72,10 +92,16 @@ export default function GuestImportExport({ eventId }: GuestImportExportProps) {
           <Download className="h-4 w-4" />
           Export CSV
         </Button>
+        <Button variant="outline" size="sm" onClick={handleSampleDownload}>
+          <FileText className="h-4 w-4" />
+          Sample CSV
+        </Button>
         <input
           ref={fileInputRef}
           type="file"
           accept=".csv,text/csv"
+          aria-label="Choose a CSV file of guests to import"
+          tabIndex={-1}
           className="sr-only"
           onChange={handleFileChange}
         />
@@ -86,6 +112,11 @@ export default function GuestImportExport({ eventId }: GuestImportExportProps) {
           <GuestContactImport eventId={eventId} />
         </div>
       )}
+
+      <p className="mt-2 text-xs text-slate-400">
+        CSV columns: name, mobile_number (required), email, category, family_member_count, notes.
+        Up to 1000 rows, 2 MB.
+      </p>
 
       {exportError && <p className="mt-2 text-sm text-rose-600">{exportError}</p>}
       {importError && <p className="mt-2 text-sm text-rose-600">{importError}</p>}
@@ -105,7 +136,7 @@ export default function GuestImportExport({ eventId }: GuestImportExportProps) {
             <button
               type="button"
               onClick={() => setImportResult(null)}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               aria-label="Dismiss"
             >
               <X className="h-3.5 w-3.5" />

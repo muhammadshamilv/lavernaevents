@@ -8,6 +8,7 @@ export interface User {
   role: UserRole;
   is_verified: boolean;
   is_active: boolean;
+  profile_image?: string;
 }
 
 export interface RegisterPayload {
@@ -37,7 +38,34 @@ export interface ResendOtpPayload {
 }
 
 export interface VerifyMobileResult {
-  id: number;
-  mobile_number: string;
-  is_verified: boolean;
+  id?: number;
+  mobile_number?: string;
+  is_verified?: boolean;
+}
+
+export interface ForgotPasswordPayload {
+  // Email address or mobile number.
+  identifier: string;
+}
+
+export interface ResetPasswordPayload {
+  identifier: string;
+  code: string;
+  new_password: string;
+  new_password_confirm: string;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+  new_password_confirm: string;
+}
+
+export interface UpdateProfilePayload {
+  full_name?: string;
+  profile_image?: File;
+}
+
+export interface CooldownResult {
+  cooldown_seconds?: number;
 }

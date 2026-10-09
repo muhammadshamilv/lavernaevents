@@ -21,6 +21,23 @@ export interface InvitationTemplate {
   in_library: boolean;
 }
 
+/** Plan usage returned alongside the template list. */
+export interface TemplateListMeta {
+  /** null = unlimited */
+  template_limit: number | null;
+  template_count: number;
+}
+
+export interface InvitationTemplateList {
+  templates: InvitationTemplate[];
+  meta: TemplateListMeta;
+}
+
+export interface DeleteTemplateResult {
+  /** "deleted" = gone for good; "deactivated" = hidden because invitations were already made from it. */
+  outcome: "deleted" | "deactivated";
+}
+
 export type InvitationStatus = "GENERATED" | "FAILED";
 
 export interface Invitation {

@@ -1,6 +1,6 @@
 from common.permissions import IsAdminRole
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from events.models import Event
 from gallery.models import GalleryMedia
 from gallery.services import delete_media
 from invitations.models import InvitationTemplate
@@ -28,6 +28,11 @@ from .serializers import (
     PlatformPoolTopupSerializer,
 )
 from .services import (
+    AdminError,
+    check_user_update,
+    delete_plan,
+    delete_template,
+    delete_user,
     get_dashboard_stats,
     get_pool_topup_history,
     get_reports,
@@ -37,28 +42,47 @@ from .services import (
     unsuspend_user,
 )
 
+ADMIN_ERROR_STATUS_MAP = {
+    "cannot_modify_self": status.HTTP_400_BAD_REQUEST,
+    "last_admin": status.HTTP_409_CONFLICT,
+    "in_use": status.HTTP_409_CONFLICT,
+}
+
+
+def _ok(message: str, data=None, code=status.HTTP_200_OK) -> Response:
+    return Response({"success": True, "message": message, "data": {} if data is None else data}, status=code)
+
+
+def _invalid(message: str, errors) -> Response:
+    return Response(
+        {"success": False, "message": message, "errors": errors},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _admin_error(error: AdminError) -> Response:
+    return Response(
+        {"success": False, "message": error.message, "errors": {"detail": [error.message]}},
+        status=ADMIN_ERROR_STATUS_MAP.get(error.code, status.HTTP_400_BAD_REQUEST),
+    )
+
+
+class AdminAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminRole]
+
 
 # --------------------------------------------------
 # Dashboard
 # --------------------------------------------------
 
-class AdminDashboardStatsView(APIView):
-    """Admin Dashboard: Total Users, Active Events, Membership Sales,
-    Revenue, Storage Usage, and (Phase 26) platform channel capacity."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
+class AdminDashboardStatsView(AdminAPIView):
+    """Total Users, Active Events, Membership Sales, Revenue, Storage Usage
+    and platform channel capacity."""
 
     def get(self, request):
-        stats = get_dashboard_stats()
-        serializer = AdminDashboardStatsSerializer(stats)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Dashboard stats retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
+        return _ok(
+            "Dashboard stats retrieved successfully.",
+            AdminDashboardStatsSerializer(get_dashboard_stats()).data,
         )
 
 
@@ -67,339 +91,212 @@ class AdminDashboardStatsView(APIView):
 # --------------------------------------------------
 
 class AdminUserListView(ListAPIView):
-    """View Users: list every user, with search and role/status filters."""
+    """List every user, with search and role/status filters (paged)."""
 
     serializer_class = AdminUserListSerializer
     permission_classes = [IsAuthenticated, IsAdminRole]
     filterset_fields = ["role", "is_active", "is_suspended", "is_verified"]
-    search_fields = ["full_name", "email", "mobile_number"]
 
     def get_queryset(self):
-        return User.objects.all()
+        queryset = User.objects.all().order_by("-created_at", "-id")
+        search = (self.request.query_params.get("search") or "").strip()
+
+        if search:
+            condition = (
+                Q(full_name__icontains=search)
+                | Q(email__icontains=search)
+                | Q(mobile_number__icontains=search)
+            )
+            # "+91 98765 43210" is stored as its last 10 digits.
+            digits = "".join(ch for ch in search if ch.isdigit())
+            if len(digits) >= 10:
+                condition |= Q(mobile_number__icontains=digits[-10:])
+            queryset = queryset.filter(condition)
+
+        return queryset
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-
-        search = request.query_params.get("search")
-
-        if search:
-            queryset = queryset.filter(full_name__icontains=search) | queryset.filter(
-                email__icontains=search
-            ) | queryset.filter(mobile_number__icontains=search)
-
         page = self.paginate_queryset(queryset)
 
         if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
 
-        serializer = self.get_serializer(queryset, many=True)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Users retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Users retrieved successfully.", self.get_serializer(queryset, many=True).data)
 
 
-class AdminUserDetailView(APIView):
-    """View/Edit/Delete a single user."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
+class AdminUserDetailView(AdminAPIView):
+    """View / edit / delete a single user."""
 
     def get(self, request, user_pk):
         user = get_object_or_404(User, pk=user_pk)
-        serializer = AdminUserListSerializer(user)
 
-        return Response(
-            {
-                "success": True,
-                "message": "User retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("User retrieved successfully.", AdminUserListSerializer(user).data)
 
     def patch(self, request, user_pk):
         user = get_object_or_404(User, pk=user_pk)
-
-        serializer = AdminUserUpdateSerializer(
-            user, data=request.data, partial=True
-        )
+        serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "User update failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("User update failed.", serializer.errors)
+
+        try:
+            check_user_update(request.user, user, serializer.validated_data)
+        except AdminError as error:
+            return _admin_error(error)
 
         serializer.save()
 
-        return Response(
-            {
-                "success": True,
-                "message": "User updated successfully.",
-                "data": AdminUserListSerializer(user).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("User updated successfully.", AdminUserListSerializer(user).data)
 
     def delete(self, request, user_pk):
         user = get_object_or_404(User, pk=user_pk)
-        user.delete()
 
-        return Response(
-            {
-                "success": True,
-                "message": "User deleted successfully.",
-                "data": {},
-            },
-            status=status.HTTP_200_OK,
-        )
+        try:
+            delete_user(request.user, user)
+        except AdminError as error:
+            return _admin_error(error)
+
+        return _ok("User deleted successfully.")
 
 
-class AdminUserSuspendView(APIView):
-    """Suspend Users: block login without deleting the account."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
+class AdminUserSuspendView(AdminAPIView):
+    """Block login without deleting the account."""
 
     def post(self, request, user_pk):
         user = get_object_or_404(User, pk=user_pk)
-        user = suspend_user(user)
 
-        return Response(
-            {
-                "success": True,
-                "message": "User suspended successfully.",
-                "data": AdminUserListSerializer(user).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        try:
+            user = suspend_user(request.user, user)
+        except AdminError as error:
+            return _admin_error(error)
+
+        return _ok("User suspended successfully.", AdminUserListSerializer(user).data)
 
 
-class AdminUserUnsuspendView(APIView):
+class AdminUserUnsuspendView(AdminAPIView):
     """Reverse a suspension."""
 
-    permission_classes = [IsAuthenticated, IsAdminRole]
-
     def post(self, request, user_pk):
         user = get_object_or_404(User, pk=user_pk)
-        user = unsuspend_user(user)
+        user = unsuspend_user(request.user, user)
 
-        return Response(
-            {
-                "success": True,
-                "message": "User unsuspended successfully.",
-                "data": AdminUserListSerializer(user).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("User unsuspended successfully.", AdminUserListSerializer(user).data)
 
 
 # --------------------------------------------------
 # Membership Management
 # --------------------------------------------------
 
-class AdminMembershipPlanListCreateView(ListAPIView):
-    """Create Plans / list all plans (including inactive ones, unlike the
-    public MembershipPlanListView)."""
+class AdminMembershipPlanListCreateView(AdminAPIView):
+    """List all plans (including inactive) or create one."""
 
-    serializer_class = AdminMembershipPlanSerializer
-    permission_classes = [IsAuthenticated, IsAdminRole]
-    pagination_class = None
+    def get(self, request):
+        plans = MembershipPlan.objects.all().order_by("display_order", "price")
 
-    def get_queryset(self):
-        return MembershipPlan.objects.all().order_by("display_order", "price")
-
-    def list(self, request, *args, **kwargs):
-        serializer = self.get_serializer(self.get_queryset(), many=True)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Membership plans retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Membership plans retrieved successfully.", AdminMembershipPlanSerializer(plans, many=True).data)
 
     def post(self, request):
         serializer = AdminMembershipPlanSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Plan creation failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("Plan creation failed.", serializer.errors)
 
         plan = serializer.save()
 
-        return Response(
-            {
-                "success": True,
-                "message": "Plan created successfully.",
-                "data": AdminMembershipPlanSerializer(plan).data,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return _ok("Plan created successfully.", AdminMembershipPlanSerializer(plan).data, status.HTTP_201_CREATED)
 
 
-class AdminMembershipPlanDetailView(APIView):
-    """Edit Plans / Delete Plans."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
+class AdminMembershipPlanDetailView(AdminAPIView):
+    """Edit or delete a plan."""
 
     def patch(self, request, plan_pk):
         plan = get_object_or_404(MembershipPlan, pk=plan_pk)
-
-        serializer = AdminMembershipPlanSerializer(
-            plan, data=request.data, partial=True
-        )
+        serializer = AdminMembershipPlanSerializer(plan, data=request.data, partial=True)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Plan update failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("Plan update failed.", serializer.errors)
 
         serializer.save()
 
-        return Response(
-            {
-                "success": True,
-                "message": "Plan updated successfully.",
-                "data": AdminMembershipPlanSerializer(plan).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Plan updated successfully.", AdminMembershipPlanSerializer(plan).data)
 
     def delete(self, request, plan_pk):
         plan = get_object_or_404(MembershipPlan, pk=plan_pk)
-        plan.delete()
 
-        return Response(
-            {
-                "success": True,
-                "message": "Plan deleted successfully.",
-                "data": {},
-            },
-            status=status.HTTP_200_OK,
-        )
+        try:
+            delete_plan(request.user, plan)
+        except AdminError as error:
+            return _admin_error(error)
+
+        return _ok("Plan deleted successfully.")
 
 
 # --------------------------------------------------
-# Invitation Templates
+# Invitation Templates (platform templates only)
 # --------------------------------------------------
 
-class AdminInvitationTemplateListCreateView(ListAPIView):
-    """Add Templates / list all templates (including inactive ones)."""
+def _platform_templates():
+    """Templates the platform provides. Organizers' own uploads are theirs
+    and are not managed here."""
 
-    serializer_class = AdminInvitationTemplateSerializer
-    permission_classes = [IsAuthenticated, IsAdminRole]
+    return InvitationTemplate.objects.filter(is_custom=False)
+
+
+class AdminInvitationTemplateListCreateView(AdminAPIView):
     parser_classes = [MultiPartParser, FormParser]
-    pagination_class = None
 
-    def get_queryset(self):
-        return InvitationTemplate.objects.all().order_by("display_order", "name")
+    def get(self, request):
+        templates = _platform_templates().order_by("display_order", "name")
 
-    def list(self, request, *args, **kwargs):
-        serializer = self.get_serializer(self.get_queryset(), many=True)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Invitation templates retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
+        return _ok(
+            "Invitation templates retrieved successfully.",
+            AdminInvitationTemplateSerializer(templates, many=True, context={"request": request}).data,
         )
 
     def post(self, request):
-        serializer = AdminInvitationTemplateSerializer(data=request.data)
+        serializer = AdminInvitationTemplateSerializer(data=request.data, context={"request": request})
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Template creation failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("Template creation failed.", serializer.errors)
 
         template = serializer.save()
 
-        return Response(
-            {
-                "success": True,
-                "message": "Template created successfully.",
-                "data": AdminInvitationTemplateSerializer(template).data,
-            },
-            status=status.HTTP_201_CREATED,
+        return _ok(
+            "Template created successfully.",
+            AdminInvitationTemplateSerializer(template, context={"request": request}).data,
+            status.HTTP_201_CREATED,
         )
 
 
-class AdminInvitationTemplateDetailView(APIView):
-    """Edit Templates / Delete Templates."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
+class AdminInvitationTemplateDetailView(AdminAPIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def patch(self, request, template_pk):
-        template = get_object_or_404(InvitationTemplate, pk=template_pk)
-
+        template = get_object_or_404(_platform_templates(), pk=template_pk)
         serializer = AdminInvitationTemplateSerializer(
-            template, data=request.data, partial=True
+            template, data=request.data, partial=True, context={"request": request}
         )
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Template update failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("Template update failed.", serializer.errors)
 
         serializer.save()
 
-        return Response(
-            {
-                "success": True,
-                "message": "Template updated successfully.",
-                "data": AdminInvitationTemplateSerializer(template).data,
-            },
-            status=status.HTTP_200_OK,
+        return _ok(
+            "Template updated successfully.",
+            AdminInvitationTemplateSerializer(template, context={"request": request}).data,
         )
 
     def delete(self, request, template_pk):
-        template = get_object_or_404(InvitationTemplate, pk=template_pk)
-        template.delete()
+        template = get_object_or_404(_platform_templates(), pk=template_pk)
 
-        return Response(
-            {
-                "success": True,
-                "message": "Template deleted successfully.",
-                "data": {},
-            },
-            status=status.HTTP_200_OK,
-        )
+        try:
+            delete_template(request.user, template)
+        except AdminError as error:
+            return _admin_error(error)
+
+        return _ok("Template deleted successfully.")
 
 
 # --------------------------------------------------
@@ -407,245 +304,120 @@ class AdminInvitationTemplateDetailView(APIView):
 # --------------------------------------------------
 
 class AdminGalleryMediaListView(ListAPIView):
-    """Monitor Storage / Manage Uploads: list all gallery media platform-wide."""
+    """Browse gallery media platform-wide (paged)."""
 
     serializer_class = AdminGalleryMediaSerializer
     permission_classes = [IsAuthenticated, IsAdminRole]
     filterset_fields = ["media_type", "event"]
 
     def get_queryset(self):
-        return GalleryMedia.objects.select_related("event", "uploaded_by").all()
+        return GalleryMedia.objects.select_related("event", "uploaded_by").order_by("-created_at", "-id")
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-
         page = self.paginate_queryset(queryset)
 
         if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
 
-        serializer = self.get_serializer(queryset, many=True)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Gallery media retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Gallery media retrieved successfully.", self.get_serializer(queryset, many=True).data)
 
 
-class AdminGalleryMediaDeleteView(APIView):
-    """Delete Media: admin can remove any media platform-wide."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
+class AdminGalleryMediaDeleteView(AdminAPIView):
+    """Remove any media platform-wide."""
 
     def delete(self, request, media_pk):
-        media = get_object_or_404(GalleryMedia, pk=media_pk)
-        delete_media(media)
+        delete_media(get_object_or_404(GalleryMedia, pk=media_pk))
 
-        return Response(
-            {
-                "success": True,
-                "message": "Media deleted successfully.",
-                "data": {},
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Media deleted successfully.")
 
 
 # --------------------------------------------------
 # Reports
 # --------------------------------------------------
 
-class AdminReportsView(APIView):
-    """Reports: Revenue, Registrations, Active Events, Membership
-    Statistics, Storage Usage."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
-
+class AdminReportsView(AdminAPIView):
     def get(self, request):
-        data = get_reports()
-        serializer = AdminReportsSerializer(data)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Reports retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Reports retrieved successfully.", AdminReportsSerializer(get_reports()).data)
 
 
 # --------------------------------------------------
-# Phase 26: platform channel pools
+# Platform channel pools
 # --------------------------------------------------
 
-class AdminChannelPoolListView(APIView):
-    """List every channel's platform pool, with usage and warning flags."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
-
+class AdminChannelPoolListView(AdminAPIView):
     def get(self, request):
-        serializer = PlatformChannelPoolSerializer(list_channel_pools(), many=True)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Channel pools retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
+        return _ok(
+            "Channel pools retrieved successfully.",
+            PlatformChannelPoolSerializer(list_channel_pools(), many=True).data,
         )
 
 
-class AdminChannelPoolTopupView(APIView):
-    """Top up a platform channel pool's total capacity."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
-
+class AdminChannelPoolTopupView(AdminAPIView):
     def post(self, request):
         serializer = PlatformPoolTopupCreateSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Invalid topup request.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("Invalid topup request.", serializer.errors)
 
+        data = serializer.validated_data
         pool = topup_channel_pool(
-            channel=serializer.validated_data["channel"],
-            amount=serializer.validated_data["amount"],
-            note=serializer.validated_data.get("note", ""),
+            channel=data["channel"],
+            amount=data["amount"],
+            note=data.get("note", ""),
             admin_user=request.user,
+            low_balance_threshold=data.get("low_balance_threshold"),
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": "Pool topped up successfully.",
-                "data": PlatformChannelPoolSerializer(pool).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Pool topped up successfully.", PlatformChannelPoolSerializer(pool).data)
 
 
-class AdminChannelPoolTopupHistoryView(APIView):
-    """View the topup audit history, optionally filtered by channel."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
-
+class AdminChannelPoolTopupHistoryView(AdminAPIView):
     def get(self, request):
-        channel = request.query_params.get("channel")
-        history = get_pool_topup_history(channel=channel)
-        serializer = PlatformPoolTopupSerializer(history, many=True)
+        history = get_pool_topup_history(channel=request.query_params.get("channel"))
 
-        return Response(
-            {
-                "success": True,
-                "message": "Topup history retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Topup history retrieved successfully.", PlatformPoolTopupSerializer(history, many=True).data)
 
 
 # --------------------------------------------------
-# Phase 26: topup pack administration
+# Topup pack administration
 # --------------------------------------------------
 
-class AdminTopupPackListCreateView(APIView):
-    """List all topup packs (including inactive) or create a new one."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
-
+class AdminTopupPackListCreateView(AdminAPIView):
     def get(self, request):
         packs = TopupPack.objects.all().order_by("display_order", "price")
-        serializer = AdminTopupPackSerializer(packs, many=True)
 
-        return Response(
-            {
-                "success": True,
-                "message": "Topup packs retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Topup packs retrieved successfully.", AdminTopupPackSerializer(packs, many=True).data)
 
     def post(self, request):
         serializer = AdminTopupPackSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Topup pack creation failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("Topup pack creation failed.", serializer.errors)
 
         pack = serializer.save()
 
-        return Response(
-            {
-                "success": True,
-                "message": "Topup pack created successfully.",
-                "data": AdminTopupPackSerializer(pack).data,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return _ok("Topup pack created successfully.", AdminTopupPackSerializer(pack).data, status.HTTP_201_CREATED)
 
 
-class AdminTopupPackDetailView(APIView):
-    """Edit a topup pack, or deactivate it (DELETE keeps the row so that
-    existing TopupPurchase records still point at a real pack)."""
-
-    permission_classes = [IsAuthenticated, IsAdminRole]
+class AdminTopupPackDetailView(AdminAPIView):
+    """Edit a pack, or deactivate it (DELETE keeps the row so existing
+    purchases still point at a real pack)."""
 
     def patch(self, request, pack_pk):
         pack = get_object_or_404(TopupPack, pk=pack_pk)
-
         serializer = AdminTopupPackSerializer(pack, data=request.data, partial=True)
 
         if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Topup pack update failed.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _invalid("Topup pack update failed.", serializer.errors)
 
         pack = serializer.save()
 
-        return Response(
-            {
-                "success": True,
-                "message": "Topup pack updated successfully.",
-                "data": AdminTopupPackSerializer(pack).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Topup pack updated successfully.", AdminTopupPackSerializer(pack).data)
 
     def delete(self, request, pack_pk):
         pack = get_object_or_404(TopupPack, pk=pack_pk)
         pack.is_active = False
         pack.save(update_fields=["is_active", "updated_at"])
 
-        return Response(
-            {
-                "success": True,
-                "message": "Topup pack deactivated successfully.",
-                "data": AdminTopupPackSerializer(pack).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return _ok("Topup pack deactivated successfully.", AdminTopupPackSerializer(pack).data)

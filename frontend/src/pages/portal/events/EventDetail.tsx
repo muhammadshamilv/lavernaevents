@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarDays,
   Camera,
@@ -21,7 +22,13 @@ import { Card } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { useDeleteEventMutation, useEvent } from "@/queries/useEventQueries";
+import {
+  useDeleteEventMutation,
+  useEvent,
+  useUpdateEventMutation,
+} from "@/queries/useEventQueries";
+import { EVENT_STATUS_TRANSITIONS } from "@/types/event.types";
+import type { EventStatus } from "@/types/event.types";
 import { useEventDashboardStats } from "@/queries/useDashboardQueries";
 import {
   eventStatusBadgeClass,
@@ -33,6 +40,13 @@ import { resolveMediaUrl } from "@/lib/media";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
 
+const STATUS_ACTION_LABEL: Record<EventStatus, string> = {
+  DRAFT: "Move to draft",
+  PUBLISHED: "Publish",
+  COMPLETED: "Mark completed",
+  CANCELLED: "Cancel event",
+};
+
 export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
   const eventId = id ? Number(id) : undefined;
@@ -40,19 +54,37 @@ export default function EventDetail() {
 
   const { data: event, isLoading, isError } = useEvent(eventId);
   const deleteMutation = useDeleteEventMutation();
+  const statusMutation = useUpdateEventMutation();
   const { data: stats, isLoading: statsLoading } = useEventDashboardStats(eventId);
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"delete" | "cancel" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const changeStatus = (status: EventStatus) => {
+    if (!eventId) return;
+    setActionError(null);
+
+    statusMutation.mutate(
+      { id: eventId, payload: { status } },
+      {
+        onSuccess: () => setConfirm(null),
+        onError: (error) => {
+          setConfirm(null);
+          setActionError(getApiErrorMessage(error, "Couldn't change the event status."));
+        },
+      }
+    );
+  };
 
   const handleDelete = () => {
     if (!eventId) return;
+    setActionError(null);
 
     deleteMutation.mutate(eventId, {
       onSuccess: () => navigate("/portal/events", { replace: true }),
       onError: (error) => {
-        setDeleteError(getApiErrorMessage(error, "Couldn't delete this event."));
-        setConfirmOpen(false);
+        setActionError(getApiErrorMessage(error, "Couldn't delete this event."));
+        setConfirm(null);
       },
     });
   };
@@ -164,6 +196,7 @@ export default function EventDetail() {
                   <Link
                     to={`/portal/events/${event.id}/edit`}
                     className={buttonVariants({ variant: "outline", size: "sm" })}
+                    aria-label="Edit event"
                   >
                     <Pencil className="h-4 w-4" />
                     <span className="hidden sm:inline">Edit</span>
@@ -172,7 +205,8 @@ export default function EventDetail() {
                     variant="outline"
                     size="sm"
                     className="border-rose-200 text-rose-600 hover:bg-rose-50"
-                    onClick={() => setConfirmOpen(true)}
+                    onClick={() => setConfirm("delete")}
+                    aria-label="Delete event"
                   >
                     <Trash2 className="h-4 w-4" />
                     <span className="hidden sm:inline">Delete</span>
@@ -180,7 +214,33 @@ export default function EventDetail() {
                 </div>
               </div>
 
-              {deleteError && <p className="mt-4 text-sm text-rose-600">{deleteError}</p>}
+              {actionError && (
+                <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 p-3" role="alert">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <p className="text-sm text-amber-800">{actionError}</p>
+                </div>
+              )}
+
+              {/* Status actions - only the moves the server allows */}
+              <div className="mt-4 flex flex-wrap gap-2">
+                {EVENT_STATUS_TRANSITIONS[event.status].map((next) => (
+                  <Button
+                    key={next}
+                    size="sm"
+                    variant={next === "CANCELLED" ? "outline" : "primary"}
+                    className={
+                      next === "CANCELLED"
+                        ? "border-rose-200 text-rose-600 hover:bg-rose-50"
+                        : undefined
+                    }
+                    isLoading={statusMutation.isPending && statusMutation.variables?.payload.status === next}
+                    disabled={statusMutation.isPending}
+                    onClick={() => (next === "CANCELLED" ? setConfirm("cancel") : changeStatus(next))}
+                  >
+                    {STATUS_ACTION_LABEL[next]}
+                  </Button>
+                ))}
+              </div>
 
               {event.description && (
                 <p className="mt-5 text-sm text-slate-600">{event.description}</p>
@@ -217,12 +277,15 @@ export default function EventDetail() {
                 <div className="flex items-center gap-2.5 text-sm text-slate-600">
                   <Clock className="h-4 w-4 shrink-0 text-slate-400" />
                   {formatEventTime(event.event_time)}
+                  {event.event_end_time && ` - ${formatEventTime(event.event_end_time)}`}
                 </div>
                 {event.venue_name && (
-                  <div className="flex items-center gap-2.5 text-sm text-slate-600 sm:col-span-2">
-                    <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
-                    {event.venue_name}
-                    {event.address && ` - ${event.address}`}
+                  <div className="flex items-start gap-2.5 text-sm text-slate-600 sm:col-span-2">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="min-w-0 break-words">
+                      {event.venue_name}
+                      {event.address && ` - ${event.address}`}
+                    </span>
                   </div>
                 )}
                 {event.host_name && (
@@ -337,14 +400,25 @@ export default function EventDetail() {
       </div>
 
       <ConfirmDialog
-        open={confirmOpen}
+        open={confirm === "delete"}
         title="Delete this event?"
-        description={`"${event.name}" will be permanently deleted. This can't be undone.`}
+        description={`"${event.name}" and everything attached to it - guests, invitations, RSVPs and gallery - will be permanently deleted. This can't be undone. If you only want to stop it, cancel the event instead.`}
         confirmLabel="Delete event"
         destructive
         isLoading={deleteMutation.isPending}
         onConfirm={handleDelete}
-        onCancel={() => setConfirmOpen(false)}
+        onCancel={() => setConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={confirm === "cancel"}
+        title="Cancel this event?"
+        description={`"${event.name}" will be marked as cancelled. You can reactivate it later (if your plan still has room for it).`}
+        confirmLabel="Cancel event"
+        destructive
+        isLoading={statusMutation.isPending}
+        onConfirm={() => changeStatus("CANCELLED")}
+        onCancel={() => setConfirm(null)}
       />
     </div>
   );

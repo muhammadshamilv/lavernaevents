@@ -3,12 +3,15 @@ from django.urls import path
 from .preview_views import ActiveFilledTemplatePreviewView
 from .views import (
     ActiveFilledTemplateView,
+    CustomTemplateDeleteView,
+    CustomTemplateUploadView,
     EventInvitationListView,
     EventStandardFieldDefaultsView,
     InvitationPreviewView,
     InvitationReportPdfView,
     InvitationReportView,
     InvitationTemplateListView,
+    MyCustomTemplateListView,
     PendingWhatsAppReminderListView,
     ReminderScheduleDetailView,
     ReminderScheduleListCreateView,
@@ -20,6 +23,21 @@ urlpatterns = [
         "invitation-templates/",
         InvitationTemplateListView.as_view(),
         name="invitation-template-list",
+    ),
+    path(
+        "invitation-templates/upload/",
+        CustomTemplateUploadView.as_view(),
+        name="invitation-template-upload",
+    ),
+    path(
+        "invitation-templates/mine/",
+        MyCustomTemplateListView.as_view(),
+        name="invitation-template-mine",
+    ),
+    path(
+        "invitation-templates/<int:template_pk>/",
+        CustomTemplateDeleteView.as_view(),
+        name="invitation-template-delete",
     ),
     path(
         "invitation-templates/active/",

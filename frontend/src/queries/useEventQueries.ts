@@ -6,21 +6,26 @@ import {
   getEvents,
   updateEvent,
 } from "@/api/events.api";
-import type { CreateEventPayload, UpdateEventPayload } from "@/types/event.types";
+import type {
+  CreateEventPayload,
+  EventListParams,
+  UpdateEventPayload,
+} from "@/types/event.types";
 
 export const eventKeys = {
   all: ["events"] as const,
   lists: () => ["events", "list"] as const,
-  list: (page: number) => ["events", "list", page] as const,
+  list: (params: number | EventListParams) => ["events", "list", params] as const,
   detail: (id: number) => ["events", "detail", id] as const,
 };
 
-export function useEvents(page: number) {
+// Accepts a page number (older callers) or a params object (page + filters).
+export function useEvents(arg: number | EventListParams) {
   return useQuery({
-    queryKey: eventKeys.list(page),
-    queryFn: () => getEvents(page),
-    // Keeps showing the current page's data while the next page loads,
-    // instead of flashing a skeleton on every page change.
+    queryKey: eventKeys.list(arg),
+    queryFn: () => getEvents(arg),
+    // Keeps showing the current results while the next page / filter loads,
+    // instead of flashing a skeleton on every change.
     placeholderData: keepPreviousData,
   });
 }
@@ -39,8 +44,7 @@ export function useCreateEventMutation() {
   return useMutation({
     mutationFn: (payload: CreateEventPayload) => createEvent(payload),
     onSuccess: () => {
-      // Prefix match: invalidates every page's cached list (["events","list",1],
-      // ["events","list",2], ...), not just page 1.
+      // Prefix match: invalidates every cached list (any page / filter).
       queryClient.invalidateQueries({ queryKey: eventKeys.lists() });
     },
   });
@@ -54,11 +58,7 @@ export function useUpdateEventMutation() {
       updateEvent(id, payload),
     onSuccess: (event) => {
       queryClient.invalidateQueries({ queryKey: eventKeys.lists() });
-      // setQueryData rather than invalidating the detail query too: the
-      // mutation response already IS the fresh record, so writing it
-      // straight into the cache shows the update immediately with no
-      // extra round trip, while still being visible to any other
-      // component reading useEvent(event.id).
+      // The response already IS the fresh record - write it straight in.
       queryClient.setQueryData(eventKeys.detail(event.id), event);
     },
   });
@@ -69,7 +69,8 @@ export function useDeleteEventMutation() {
 
   return useMutation({
     mutationFn: (id: number) => deleteEvent(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
+      queryClient.removeQueries({ queryKey: eventKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: eventKeys.lists() });
     },
   });

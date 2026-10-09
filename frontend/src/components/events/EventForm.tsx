@@ -1,17 +1,28 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { isAxiosError } from "axios";
-import { AlertTriangle, ImagePlus } from "lucide-react";
+import { AlertTriangle, ImagePlus, X } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { createEventSchema, editEventSchema, type EventFormValues } from "@/schemas/event.schema";
+import {
+  createEventSchema,
+  editEventSchema,
+  localToday,
+  type EventFormValues,
+} from "@/schemas/event.schema";
 import { useCreateEventMutation, useUpdateEventMutation } from "@/queries/useEventQueries";
-import { EVENT_STATUS_OPTIONS, EVENT_TYPE_OPTIONS } from "@/types/event.types";
+import {
+  EVENT_COVER_MAX_MB,
+  EVENT_COVER_TYPES,
+  EVENT_STATUS_OPTIONS,
+  EVENT_STATUS_TRANSITIONS,
+  EVENT_TYPE_OPTIONS,
+} from "@/types/event.types";
 import type { CreateEventPayload, Event } from "@/types/event.types";
 import { resolveMediaUrl } from "@/lib/media";
 import { getApiErrorMessage } from "@/lib/apiError";
@@ -22,7 +33,20 @@ interface EventFormProps {
   existingEvent?: Event;
 }
 
-const todayStr = new Date().toISOString().slice(0, 10);
+const FORM_FIELDS: ReadonlyArray<keyof EventFormValues> = [
+  "name",
+  "event_type",
+  "custom_event_type_label",
+  "host_name",
+  "description",
+  "event_date",
+  "event_time",
+  "event_end_time",
+  "venue_name",
+  "address",
+  "google_maps_link",
+  "status",
+];
 
 /**
  * Single responsive event create/edit form. IMPORTANT: only ONE <form>
@@ -30,26 +54,28 @@ const todayStr = new Date().toISOString().slice(0, 10);
  * render (not by CSS hidden/lg:hidden on two simultaneously-mounted
  * forms). Two mounted forms sharing one useForm() instance both calling
  * register("field") for the same field name breaks react-hook-form's
- * internal ref tracking - only the last-registered DOM node's value is
- * actually read on submit, which silently broke this form on desktop
- * widths in an earlier version. Do not reintroduce a dual-mount pattern
- * here.
+ * internal ref tracking. Do not reintroduce a dual-mount pattern here.
  */
 export default function EventForm({ existingEvent }: EventFormProps) {
   const isDesktop = useIsDesktop();
   const navigate = useNavigate();
   const isEditMode = !!existingEvent;
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const createMutation = useCreateEventMutation();
   const updateMutation = useUpdateEventMutation();
   const activeMutation = isEditMode ? updateMutation : createMutation;
 
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [removeCover, setRemoveCover] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
     resolveMediaUrl(existingEvent?.cover_image)
   );
   const [limitError, setLimitError] = useState<string | null>(null);
+  const [fieldErrorsMapped, setFieldErrorsMapped] = useState(false);
 
+  // Free blob: previews when replaced / on unmount.
   useEffect(() => {
     return () => {
       if (previewUrl?.startsWith("blob:")) {
@@ -62,6 +88,7 @@ export default function EventForm({ existingEvent }: EventFormProps) {
     register,
     handleSubmit,
     watch,
+    setError,
     formState: { errors },
   } = useForm<EventFormValues>({
     resolver: zodResolver(isEditMode ? editEventSchema : createEventSchema),
@@ -98,25 +125,84 @@ export default function EventForm({ existingEvent }: EventFormProps) {
 
   const eventType = watch("event_type");
 
+  // New events may only start as Draft or Published; existing ones follow the
+  // same transitions the server enforces.
+  const statusOptions = EVENT_STATUS_OPTIONS.filter((option) =>
+    isEditMode
+      ? option.value === existingEvent.status ||
+        EVENT_STATUS_TRANSITIONS[existingEvent.status].includes(option.value)
+      : option.value === "DRAFT" || option.value === "PUBLISHED"
+  );
+
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = ""; // lets the same file be picked again later
     if (!file) return;
+
+    if (!EVENT_COVER_TYPES.includes(file.type)) {
+      setCoverError("Cover image must be a JPG, PNG or WebP file.");
+      return;
+    }
+
+    if (file.size > EVENT_COVER_MAX_MB * 1024 * 1024) {
+      setCoverError(`Cover image must be ${EVENT_COVER_MAX_MB} MB or smaller.`);
+      return;
+    }
+
+    setCoverError(null);
     setCoverFile(file);
+    setRemoveCover(false);
     setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleRemoveCover = () => {
+    setCoverError(null);
+    setCoverFile(null);
+    setRemoveCover(true);
+    setPreviewUrl(null);
   };
 
   const onSubmit = (values: EventFormValues) => {
     setLimitError(null);
+    setFieldErrorsMapped(false);
 
     const payload: CreateEventPayload = {
       ...values,
-      cover_image: coverFile,
+      // "" is not a valid time - send null so the server clears it.
+      event_end_time: values.event_end_time ? values.event_end_time : null,
+      // File = upload, null = remove, undefined = leave as is.
+      cover_image: coverFile ?? (removeCover ? null : undefined),
     };
 
     const onError = (error: unknown) => {
-      if (isAxiosError(error) && [402, 409].includes(error.response?.status ?? 0)) {
+      if (!isAxiosError(error)) return;
+
+      const statusCode = error.response?.status ?? 0;
+
+      if ([402, 409].includes(statusCode)) {
         setLimitError(getApiErrorMessage(error, "You've reached your plan's event limit."));
         return;
+      }
+
+      // Show server-side validation messages under the matching fields.
+      const serverErrors = error.response?.data?.errors;
+
+      if (statusCode === 400 && serverErrors && typeof serverErrors === "object") {
+        let mapped = false;
+
+        for (const [field, messages] of Object.entries(serverErrors)) {
+          if (FORM_FIELDS.includes(field as keyof EventFormValues)) {
+            const message = Array.isArray(messages) ? String(messages[0]) : String(messages);
+            setError(field as keyof EventFormValues, { message });
+            mapped = true;
+          } else if (field === "cover_image") {
+            const message = Array.isArray(messages) ? String(messages[0]) : String(messages);
+            setCoverError(message);
+            mapped = true;
+          }
+        }
+
+        setFieldErrorsMapped(mapped);
       }
     };
 
@@ -143,8 +229,8 @@ export default function EventForm({ existingEvent }: EventFormProps) {
 
   const coverField = (previewSize: "sm" | "lg", twoCol: boolean) => (
     <div className={cn("space-y-1.5", twoCol && "col-span-2")}>
-      <Label>Cover image</Label>
-      <div className="flex items-center gap-4">
+      <Label htmlFor="cover_image">Cover image</Label>
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4">
         <div
           className={cn(
             "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-200 bg-slate-50",
@@ -163,21 +249,34 @@ export default function EventForm({ existingEvent }: EventFormProps) {
         >
           {previewUrl ? "Change image" : "Upload image"}
         </label>
+        {previewUrl && (
+          <button
+            type="button"
+            onClick={handleRemoveCover}
+            className="inline-flex h-9 items-center gap-1 rounded-full px-3 text-sm font-medium text-rose-600 hover:bg-rose-50"
+          >
+            <X className="h-4 w-4" />
+            Remove
+          </button>
+        )}
         <input
+          ref={coverInputRef}
           id="cover_image"
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           className="sr-only"
           onChange={handleCoverChange}
         />
       </div>
+      <p className="text-xs text-slate-400">JPG, PNG or WebP, up to {EVENT_COVER_MAX_MB} MB.</p>
+      <FormError message={coverError ?? undefined} />
     </div>
   );
 
   const statusBlock = (
     <>
       {limitError && (
-        <div className="flex items-start gap-3 rounded-2xl bg-amber-50 p-4">
+        <div className="flex items-start gap-3 rounded-2xl bg-amber-50 p-4" role="alert">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
           <div>
             <p className="text-sm font-medium text-amber-800">{limitError}</p>
@@ -187,10 +286,13 @@ export default function EventForm({ existingEvent }: EventFormProps) {
           </div>
         </div>
       )}
-      {!limitError && activeMutation.isError && (
+      {!limitError && !fieldErrorsMapped && activeMutation.isError && (
         <FormError
           message={getApiErrorMessage(activeMutation.error, "Couldn't save this event. Please try again.")}
         />
+      )}
+      {fieldErrorsMapped && (
+        <FormError message="Please fix the highlighted fields and try again." />
       )}
     </>
   );
@@ -226,7 +328,7 @@ export default function EventForm({ existingEvent }: EventFormProps) {
       <div className="space-y-1.5">
         <Label htmlFor="status">Status</Label>
         <Select id="status" hasError={!!errors.status} {...register("status")}>
-          {EVENT_STATUS_OPTIONS.map((option) => (
+          {statusOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -275,7 +377,7 @@ export default function EventForm({ existingEvent }: EventFormProps) {
         <Input
           id="event_date"
           type="date"
-          min={isEditMode ? undefined : todayStr}
+          min={isEditMode ? undefined : localToday()}
           hasError={!!errors.event_date}
           {...register("event_date")}
         />
@@ -311,6 +413,8 @@ export default function EventForm({ existingEvent }: EventFormProps) {
         <Label htmlFor="google_maps_link">Google Maps link</Label>
         <Input
           id="google_maps_link"
+          type="url"
+          inputMode="url"
           placeholder="https://maps.google.com/..."
           hasError={!!errors.google_maps_link}
           {...register("google_maps_link")}
@@ -387,6 +491,16 @@ export default function EventForm({ existingEvent }: EventFormProps) {
 
           <Button type="submit" className="w-full" size="lg" isLoading={activeMutation.isPending}>
             {isEditMode ? "Save changes" : "Create event"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            size="lg"
+            onClick={() => navigate(-1)}
+            disabled={activeMutation.isPending}
+          >
+            Cancel
           </Button>
         </form>
       )}

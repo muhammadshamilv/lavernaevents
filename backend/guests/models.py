@@ -5,12 +5,9 @@ from django.db import models
 class GuestCategory(TimeStampedModel):
     """An organizer-defined grouping of guests within one event.
 
-    Phase 15: created per event, not platform-wide - different events
-    (weddings, birthdays, corporate functions) naturally want different
-    category sets. A helper (see guests/services.py) seeds a sensible
-    default set (Family, Friends, Relatives, Special Guest, VIP) on
-    event creation, which the organizer can then rename, reorder, add
-    to, or delete freely.
+    Created per event, not platform-wide. A default set (Family, Friends,
+    Relatives, Special Guest, VIP) is seeded on event creation (see
+    guests/services.py); the organizer can rename, add or delete freely.
     """
 
     event = models.ForeignKey(
@@ -61,9 +58,8 @@ class Guest(TimeStampedModel):
         related_name="guests",
     )
 
-    # Phase 15. Nullable: a guest can exist uncategorized (e.g. imported
-    # in bulk before sorting) and SET_NULL so deleting a category never
-    # deletes the guests in it - they just become uncategorized again.
+    # Nullable + SET_NULL: deleting a category never deletes its guests,
+    # they just become uncategorized again.
     category = models.ForeignKey(
         GuestCategory,
         on_delete=models.SET_NULL,
@@ -90,13 +86,8 @@ class Guest(TimeStampedModel):
         help_text="Used for expected attendance calculation.",
     )
 
-    # Phase 15: this stays as a cheap overall summary ("has at least one
-    # channel successfully delivered this guest an invitation yet"),
-    # updated automatically by invitations/services.py whenever an
-    # InvitationSend succeeds. The detailed per-channel, per-attempt
-    # history lives in InvitationSend (see invitations/models.py) -
-    # this field is intentionally NOT the source of truth for reports
-    # or reminders, just a fast summary for guest list/filter UI.
+    # Cheap overall summary, updated by invitations/services.py. The detailed
+    # per-channel history lives in the notification logs.
     invitation_status = models.CharField(
         max_length=20,
         choices=InvitationStatus.choices,
@@ -128,6 +119,16 @@ class Guest(TimeStampedModel):
                 fields=["event", "mobile_number"],
                 name="unique_guest_per_event",
             )
+        ]
+        indexes = [
+            models.Index(
+                fields=["event", "response_status"],
+                name="guests_event_response_idx",
+            ),
+            models.Index(
+                fields=["event", "invitation_status"],
+                name="guests_event_invite_idx",
+            ),
         ]
 
     def __str__(self) -> str:

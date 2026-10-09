@@ -1,4 +1,5 @@
-from common.permissions import IsOrganizer, IsOwner
+from common.permissions import IsOrganizer
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -7,51 +8,88 @@ from rest_framework.views import APIView
 
 from .models import Event
 from .serializers import EventListSerializer, EventSerializer
-from .services import EventError, create_event, delete_event, update_event
+from .services import EventError, create_event, delete_event, today, update_event
+
+EVENT_ERROR_STATUS_MAP = {
+    "event_limit_exceeded": status.HTTP_409_CONFLICT,
+    "no_active_plan": status.HTTP_402_PAYMENT_REQUIRED,
+}
+
+
+def _event_error_response(error: EventError) -> Response:
+    return Response(
+        {
+            "success": False,
+            "message": error.message,
+            "errors": {"event": [error.message]},
+        },
+        status=EVENT_ERROR_STATUS_MAP.get(error.code, status.HTTP_400_BAD_REQUEST),
+    )
+
+
+def _not_found_response() -> Response:
+    return Response(
+        {
+            "success": False,
+            "message": "Event not found.",
+            "errors": {"event": ["No event found with this ID."]},
+        },
+        status=status.HTTP_404_NOT_FOUND,
+    )
 
 
 class EventListCreateView(ListAPIView):
-    """List the organizer's own events, or create a new one."""
+    """List the organizer's own events, or create a new one.
+
+    GET query params (all optional):
+      status=DRAFT|PUBLISHED|CANCELLED|COMPLETED
+      event_type=WEDDING|...
+      search=<text>            (name / venue / host)
+      when=upcoming|past       (upcoming = today or later, soonest first)
+      page, page_size
+    """
 
     serializer_class = EventListSerializer
     permission_classes = [IsAuthenticated, IsOrganizer]
 
-    ERROR_STATUS_MAP = {
-        "event_limit_exceeded": status.HTTP_409_CONFLICT,
-        "no_active_plan": status.HTTP_402_PAYMENT_REQUIRED,
-    }
-
     def get_queryset(self):
         """Return only events belonging to the requesting organizer."""
 
-        return Event.objects.filter(organizer=self.request.user)
+        queryset = Event.objects.filter(organizer=self.request.user)
+        params = self.request.query_params
 
-    def list(self, request, *args, **kwargs):
-        """Return the organizer's events, paginated via the shared pagination class."""
+        status_value = (params.get("status") or "").upper()
+        if status_value in Event.Status.values:
+            queryset = queryset.filter(status=status_value)
 
-        queryset = self.filter_queryset(self.get_queryset())
+        type_value = (params.get("event_type") or "").upper()
+        if type_value in Event.EventType.values:
+            queryset = queryset.filter(event_type=type_value)
 
-        page = self.paginate_queryset(queryset)
+        search = (params.get("search") or "").strip()[:100]
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search)
+                | Q(venue_name__icontains=search)
+                | Q(host_name__icontains=search)
+            )
 
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+        when = (params.get("when") or "").lower()
+        if when == "upcoming":
+            queryset = queryset.filter(event_date__gte=today()).order_by(
+                "event_date", "event_time"
+            )
+        elif when == "past":
+            queryset = queryset.filter(event_date__lt=today()).order_by(
+                "-event_date", "-event_time"
+            )
 
-        serializer = self.get_serializer(queryset, many=True)
-
-        return Response(
-            {
-                "success": True,
-                "message": "Events retrieved successfully.",
-                "data": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
+        return queryset
 
     def post(self, request, *args, **kwargs):
         """Create a new event for the requesting organizer."""
 
-        serializer = EventSerializer(data=request.data)
+        serializer = EventSerializer(data=request.data, context={"request": request})
 
         if not serializer.is_valid():
             return Response(
@@ -70,96 +108,56 @@ class EventListCreateView(ListAPIView):
             )
 
         except EventError as error:
-            response_status = self.ERROR_STATUS_MAP.get(
-                error.code,
-                status.HTTP_400_BAD_REQUEST,
-            )
-
-            return Response(
-                {
-                    "success": False,
-                    "message": error.message,
-                    "errors": {"event": [error.message]},
-                },
-                status=response_status,
-            )
-
-        response_serializer = EventSerializer(event)
+            return _event_error_response(error)
 
         return Response(
             {
                 "success": True,
                 "message": "Event created successfully.",
-                "data": response_serializer.data,
+                "data": EventSerializer(event, context={"request": request}).data,
             },
             status=status.HTTP_201_CREATED,
         )
 
 
 class EventDetailView(APIView):
-    """Retrieve, update, or delete a single event owned by the requesting organizer."""
+    """Retrieve, update, or delete a single event owned by the requesting organizer.
 
-    permission_classes = [IsAuthenticated, IsOrganizer, IsOwner]
+    Another organizer's event answers 404 (not 403), so event ids can't be
+    probed.
+    """
 
-    owner_field = "organizer"
+    permission_classes = [IsAuthenticated, IsOrganizer]
 
     def get_object(self, pk, request):
-        """Fetch the event and check object-level ownership permission."""
-
-        event = Event.objects.filter(pk=pk).first()
-
-        if event is None:
-            return None
-
-        self.check_object_permissions(request, event)
-
-        return event
+        return Event.objects.filter(pk=pk, organizer=request.user).first()
 
     def get(self, request, pk):
-        """Return a single event's details."""
-
         event = self.get_object(pk, request)
 
         if event is None:
-            return Response(
-                {
-                    "success": False,
-                    "message": "Event not found.",
-                    "errors": {"event": ["No event found with this ID."]},
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        serializer = EventSerializer(event)
+            return _not_found_response()
 
         return Response(
             {
                 "success": True,
                 "message": "Event retrieved successfully.",
-                "data": serializer.data,
+                "data": EventSerializer(event, context={"request": request}).data,
             },
             status=status.HTTP_200_OK,
         )
 
     def patch(self, request, pk):
-        """Partially update an event."""
-
         event = self.get_object(pk, request)
 
         if event is None:
-            return Response(
-                {
-                    "success": False,
-                    "message": "Event not found.",
-                    "errors": {"event": ["No event found with this ID."]},
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return _not_found_response()
 
         serializer = EventSerializer(
             event,
             data=request.data,
             partial=True,
+            context={"request": request},
         )
 
         if not serializer.is_valid():
@@ -172,36 +170,26 @@ class EventDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        updated_event = update_event(
-            event,
-            serializer.validated_data,
-        )
+        try:
+            updated_event = update_event(event, serializer.validated_data)
 
-        response_serializer = EventSerializer(updated_event)
+        except EventError as error:
+            return _event_error_response(error)
 
         return Response(
             {
                 "success": True,
                 "message": "Event updated successfully.",
-                "data": response_serializer.data,
+                "data": EventSerializer(updated_event, context={"request": request}).data,
             },
             status=status.HTTP_200_OK,
         )
 
     def delete(self, request, pk):
-        """Delete an event."""
-
         event = self.get_object(pk, request)
 
         if event is None:
-            return Response(
-                {
-                    "success": False,
-                    "message": "Event not found.",
-                    "errors": {"event": ["No event found with this ID."]},
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return _not_found_response()
 
         delete_event(event)
 

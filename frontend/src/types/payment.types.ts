@@ -16,7 +16,7 @@ export interface CreateCheckoutSessionResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 26: organizer topup pack purchases
+// Organizer topup pack purchases
 // ---------------------------------------------------------------------------
 
 export type TopupPackKind = "INVITATIONS" | "VOICE_CALLS";
@@ -38,4 +38,18 @@ export interface TopupPurchase {
 export interface CreateTopupCheckoutSessionResponse {
   checkout_url: string;
   stripe_checkout_session_id: string;
+}
+
+// ---------------------------------------------------------------------------
+// Billing history (GET /payments/history/)
+// ---------------------------------------------------------------------------
+
+export interface PaymentHistoryItem {
+  id: string;
+  kind: "PLAN" | "TOPUP";
+  description: string;
+  amount: string;
+  currency: string;
+  status: PaymentStatus;
+  created_at: string;
 }

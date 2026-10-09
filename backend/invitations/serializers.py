@@ -1,8 +1,55 @@
-from common.validators import ALLOWED_IMAGE_EXTENSIONS, validate_image_file_size
+import re
+
+from common.validators import ALLOWED_IMAGE_EXTENSIONS, validate_image_content, validate_image_file_size
 from django.core.validators import FileExtensionValidator
 from rest_framework import serializers
 
 from .models import ActiveFilledTemplate, Invitation, InvitationSend, InvitationTemplate, TemplateCustomField, PendingWhatsAppReminder, ReminderSchedule
+
+
+MAX_IMAGE_EDGE_PX = 4000
+MAX_BODY_TEXT_CHARS = 1000
+MAX_CUSTOM_FIELDS = 10
+MAX_STANDARD_VALUE_CHARS = 300
+MAX_CUSTOM_VALUE_CHARS = 200
+MAX_FILL_KEYS = 40
+
+
+def _library_template_ids(serializer) -> set[int]:
+    """The ids of the templates already in the requesting organizer's
+    library, fetched once per request (not once per template row)."""
+
+    cached = serializer.context.get("_library_template_ids")
+
+    if cached is not None:
+        return cached
+
+    request = serializer.context.get("request")
+    ids: set[int] = set()
+
+    if request is not None and request.user.is_authenticated:
+        from memberships.models import OrganizerTemplateLibrary
+
+        ids = set(
+            OrganizerTemplateLibrary.objects.filter(organizer=request.user).values_list(
+                "template_id", flat=True
+            )
+        )
+
+    serializer.context["_library_template_ids"] = ids
+
+    return ids
+
+
+def _validate_image_dimensions(value):
+    """Reject absurdly large pictures (memory / render-time protection)."""
+
+    image = getattr(value, "image", None)
+
+    if image is not None and max(image.size) > MAX_IMAGE_EDGE_PX:
+        raise serializers.ValidationError(
+            f"Image is too large. Maximum size is {MAX_IMAGE_EDGE_PX} x {MAX_IMAGE_EDGE_PX} pixels."
+        )
 
 
 class TemplateCustomFieldSerializer(serializers.ModelSerializer):
@@ -46,17 +93,7 @@ class InvitationTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_in_library(self, obj: InvitationTemplate) -> bool:
-        request = self.context.get("request")
-
-        if request is None or not request.user.is_authenticated:
-            return False
-
-        from memberships.models import OrganizerTemplateLibrary
-
-        return OrganizerTemplateLibrary.objects.filter(
-            organizer=request.user,
-            template=obj,
-        ).exists()
+        return obj.pk in _library_template_ids(self)
 
     def get_placeholder_fields(self, obj: InvitationTemplate) -> list[str]:
         return InvitationTemplate.PLACEHOLDER_FIELDS
@@ -88,13 +125,18 @@ class CustomTemplateUploadSerializer(serializers.Serializer):
     """
 
     name = serializers.CharField(max_length=150)
-    description = serializers.CharField(required=False, allow_blank=True, default="")
+    description = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=500
+    )
     channel = serializers.ChoiceField(choices=InvitationTemplate.Channel.choices)
-    body_text = serializers.CharField(required=False, allow_blank=True, default="")
+    body_text = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=MAX_BODY_TEXT_CHARS
+    )
     custom_fields = serializers.ListField(
         child=CustomFieldDefinitionInputSerializer(),
         required=False,
         default=list,
+        max_length=MAX_CUSTOM_FIELDS,
     )
     preview_image = serializers.ImageField(
         required=False,
@@ -110,11 +152,15 @@ class CustomTemplateUploadSerializer(serializers.Serializer):
     def validate_preview_image(self, value):
         if value is not None:
             validate_image_file_size(value, max_size_mb=5)
+            validate_image_content(value)
+            _validate_image_dimensions(value)
         return value
 
     def validate_background_image(self, value):
         if value is not None:
             validate_image_file_size(value, max_size_mb=5)
+            validate_image_content(value)
+            _validate_image_dimensions(value)
         return value
 
     def validate_custom_fields(self, value: list) -> list:
@@ -153,8 +199,6 @@ class CustomTemplateUploadSerializer(serializers.Serializer):
                 )
 
         if body_text:
-            import re
-
             used_placeholders = set(re.findall(r"\{(\w+)\}", body_text))
             allowed = set(InvitationTemplate.PLACEHOLDER_FIELDS) | custom_field_keys
             unknown = used_placeholders - allowed
@@ -200,17 +244,7 @@ class CustomTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_in_library(self, obj: InvitationTemplate) -> bool:
-        request = self.context.get("request")
-
-        if request is None or not request.user.is_authenticated:
-            return False
-
-        from memberships.models import OrganizerTemplateLibrary
-
-        return OrganizerTemplateLibrary.objects.filter(
-            organizer=request.user,
-            template=obj,
-        ).exists()
+        return obj.pk in _library_template_ids(self)
 
     def get_placeholder_fields(self, obj: InvitationTemplate) -> list[str]:
         return InvitationTemplate.PLACEHOLDER_FIELDS
@@ -249,8 +283,26 @@ class FillActiveTemplateSerializer(serializers.Serializer):
 
     template_id = serializers.IntegerField(required=True)
     event_id = serializers.IntegerField(required=True)
-    standard_values = serializers.DictField(child=serializers.CharField(allow_blank=True), required=False, default=dict)
-    custom_values = serializers.DictField(child=serializers.CharField(allow_blank=True), required=False, default=dict)
+    standard_values = serializers.DictField(
+        child=serializers.CharField(allow_blank=True, max_length=MAX_STANDARD_VALUE_CHARS),
+        required=False,
+        default=dict,
+    )
+    custom_values = serializers.DictField(
+        child=serializers.CharField(allow_blank=True, max_length=MAX_CUSTOM_VALUE_CHARS),
+        required=False,
+        default=dict,
+    )
+
+    def validate_standard_values(self, value: dict) -> dict:
+        if len(value) > MAX_FILL_KEYS:
+            raise serializers.ValidationError("Too many values.")
+        return value
+
+    def validate_custom_values(self, value: dict) -> dict:
+        if len(value) > MAX_FILL_KEYS:
+            raise serializers.ValidationError("Too many values.")
+        return value
 
 
 class ActiveFilledTemplateSerializer(serializers.ModelSerializer):
@@ -365,8 +417,12 @@ class ReminderScheduleSerializer(serializers.ModelSerializer):
                 "Set exactly one of category or guest, not both and not neither."
             )
 
-        if attrs.get("delay_hours") is not None and attrs["delay_hours"] < 1:
-            raise serializers.ValidationError({"delay_hours": "Must be at least 1 hour."})
+        delay = attrs.get("delay_hours")
+
+        if delay is not None and not 1 <= delay <= 24 * 30:
+            raise serializers.ValidationError(
+                {"delay_hours": "Must be between 1 hour and 720 hours (30 days)."}
+            )
 
         return attrs
 

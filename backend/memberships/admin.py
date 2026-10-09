@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import MembershipPlan, OrganizerTemplateLibrary, Subscription
+from .topup_models import PlatformChannelPool, PlatformPoolTopup, TopupPack, TopupPurchase
 
 
 @admin.register(MembershipPlan)
@@ -184,3 +185,65 @@ class OrganizerTemplateLibraryAdmin(admin.ModelAdmin):
     readonly_fields = (
         "added_at",
     )
+
+
+@admin.register(TopupPack)
+class TopupPackAdmin(admin.ModelAdmin):
+    """The fixed packs organizers can buy (also managed from the admin portal)."""
+
+    list_display = ("name", "kind", "quantity", "price", "is_active", "display_order")
+    list_filter = ("kind", "is_active")
+    search_fields = ("name",)
+    ordering = ("display_order", "price")
+
+
+@admin.register(TopupPurchase)
+class TopupPurchaseAdmin(admin.ModelAdmin):
+    """Payment records: view only, so they can never be edited by hand."""
+
+    list_display = ("user", "pack", "amount", "status", "created_at")
+    list_filter = ("status", "pack__kind")
+    search_fields = ("user__mobile_number", "user__email", "stripe_checkout_session_id")
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PlatformChannelPool)
+class PlatformChannelPoolAdmin(admin.ModelAdmin):
+    """Platform-wide send capacity per channel. Capacity changes through the
+    admin portal's Top up action, which keeps an audit trail."""
+
+    list_display = ("channel", "total_capacity", "used", "low_balance_threshold", "updated_at")
+    readonly_fields = ("channel", "total_capacity", "used", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PlatformPoolTopup)
+class PlatformPoolTopupAdmin(admin.ModelAdmin):
+    """Audit trail of pool top-ups: view only."""
+
+    list_display = ("pool", "amount", "note", "topped_up_by", "created_at")
+    list_filter = ("pool__channel",)
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

@@ -2,10 +2,11 @@ import { useState } from "react";
 import { AlertCircle, CheckCircle2, Contact, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import ContactImportReviewTable from "./ContactImportReviewTable";
+import ContactImportReviewTable, { type RowErrors } from "./ContactImportReviewTable";
 import { useGuestCategories } from "@/queries/useGuestQueries";
 import { useImportGuestsFromContactsMutation } from "@/queries/useGuestQueries";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { isValidGuestMobile, normalizeGuestMobile } from "@/lib/phone";
 import type { ContactImportRow, ContactImportResult } from "@/types/guest.types";
 
 interface GuestContactImportProps {
@@ -14,21 +15,6 @@ interface GuestContactImportProps {
 
 function makeLocalId(): string {
   return `row-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function normalizePhone(raw: string): string {
-  // Strips everything but digits, then drops a leading country code "91"
-  // only when the remainder is still a plausible 10-digit local number.
-  // Contact Picker returns whatever format the phone's own contacts app
-  // stored (+91 98765 43210, (987) 654-3210, etc.) - organizers can still
-  // hand-correct anything this gets wrong in the review table.
-  const digitsOnly = raw.replace(/\D/g, "");
-
-  if (digitsOnly.length === 12 && digitsOnly.startsWith("91")) {
-    return digitsOnly.slice(2);
-  }
-
-  return digitsOnly;
 }
 
 /**
@@ -66,7 +52,7 @@ export default function GuestContactImport({ eventId }: GuestContactImportProps)
       const newRows: ContactImportRow[] = picked.map((contact) => ({
         localId: makeLocalId(),
         name: contact.name?.[0]?.trim() ?? "",
-        mobile_number: normalizePhone(contact.tel?.[0] ?? ""),
+        mobile_number: normalizeGuestMobile(contact.tel?.[0] ?? ""),
         email: contact.email?.[0]?.trim() ?? "",
         category: null,
         family_member_count: 3,
@@ -118,7 +104,7 @@ export default function GuestContactImport({ eventId }: GuestContactImportProps)
 
     const guests = rows.map((row) => ({
       name: row.name.trim(),
-      mobile_number: row.mobile_number.trim(),
+      mobile_number: normalizeGuestMobile(row.mobile_number),
       email: row.email.trim() || undefined,
       category: row.category,
       family_member_count: row.family_member_count,
@@ -138,9 +124,28 @@ export default function GuestContactImport({ eventId }: GuestContactImportProps)
     );
   };
 
-  const hasInvalidRow = rows.some(
-    (row) => !row.name.trim() || row.mobile_number.trim().length < 10
-  );
+  // Per-row problems, shown right on the offending field.
+  const rowErrors: Record<string, RowErrors> = {};
+  const seenNumbers = new Set<string>();
+
+  for (const row of rows) {
+    const errors: RowErrors = {};
+    const number = normalizeGuestMobile(row.mobile_number);
+
+    if (!row.name.trim()) errors.name = "Name is required.";
+
+    if (!isValidGuestMobile(number)) {
+      errors.mobile = "Enter a valid number (10-15 digits).";
+    } else if (seenNumbers.has(number)) {
+      errors.mobile = "This number appears twice.";
+    } else {
+      seenNumbers.add(number);
+    }
+
+    if (errors.name || errors.mobile) rowErrors[row.localId] = errors;
+  }
+
+  const hasInvalidRow = Object.keys(rowErrors).length > 0;
 
   return (
     <Card className="p-5">
@@ -154,7 +159,7 @@ export default function GuestContactImport({ eventId }: GuestContactImportProps)
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {isContactPickerSupported && (
             <Button variant="outline" size="sm" onClick={handlePickContacts}>
               <Contact className="h-4 w-4" />
@@ -182,6 +187,7 @@ export default function GuestContactImport({ eventId }: GuestContactImportProps)
         <div className="mt-4 space-y-4">
           <ContactImportReviewTable
             rows={rows}
+            rowErrors={rowErrors}
             categories={categories}
             onChange={handleRowChange}
             onRemove={handleRemoveRow}
@@ -202,7 +208,7 @@ export default function GuestContactImport({ eventId }: GuestContactImportProps)
 
           {hasInvalidRow && (
             <p className="text-xs text-amber-600">
-              Every row needs a name and a valid 10-15 digit mobile number before importing.
+              Fix the highlighted rows (a name and a unique 10-15 digit mobile number) before importing.
             </p>
           )}
         </div>

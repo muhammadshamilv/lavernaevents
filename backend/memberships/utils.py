@@ -94,7 +94,10 @@ def check_template_limit(user, template) -> None:
             code="no_active_plan",
         )
 
-    already_in_library = OrganizerTemplateLibrary.objects.filter(
+    # A template that is not saved yet (a custom upload being checked before
+    # it is created) cannot be in anyone's library - and filtering on an
+    # unsaved instance raises ValueError.
+    already_in_library = template.pk is not None and OrganizerTemplateLibrary.objects.filter(
         organizer=user,
         template=template,
     ).exists()

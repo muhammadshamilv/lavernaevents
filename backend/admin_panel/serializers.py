@@ -1,10 +1,16 @@
-from rest_framework import serializers
-
 from gallery.models import GalleryMedia
 from invitations.models import InvitationTemplate
 from memberships.models import MembershipPlan
 from memberships.topup_models import PlatformChannelPool, PlatformPoolTopup, TopupPack
+from common.validators import validate_image_content
+from rest_framework import serializers
 from users.models import User
+from users.services import get_user_by_mobile
+
+from .helpers import normalize_admin_mobile
+
+MAX_TEMPLATE_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_POOL_TOPUP = 10_000_000
 
 
 # --------------------------------------------------
@@ -12,8 +18,7 @@ from users.models import User
 # --------------------------------------------------
 
 class AdminChannelUsageSerializer(serializers.Serializer):
-    """Phase 26: one configured platform channel pool, as shown on the
-    admin dashboard's capacity card."""
+    """One configured platform channel pool, as shown on the dashboard."""
 
     channel = serializers.CharField()
     channel_display = serializers.CharField()
@@ -30,7 +35,8 @@ class AdminDashboardStatsSerializer(serializers.Serializer):
     total_users = serializers.IntegerField()
     active_events = serializers.IntegerField()
     membership_sales = serializers.IntegerField()
-    revenue = serializers.DecimalField(max_digits=14, decimal_places=2)
+    # A JSON number, not a string, so the page can add and format it.
+    revenue = serializers.DecimalField(max_digits=14, decimal_places=2, coerce_to_string=False)
     storage_usage_mb = serializers.FloatField()
     channel_usage = AdminChannelUsageSerializer(many=True)
 
@@ -59,13 +65,11 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 
 
 class AdminUserUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for an admin editing a user's core profile fields.
+    """An admin editing a user's core profile fields.
 
-    Deliberately excludes password, role changes are allowed (an admin may
-    need to correct a mis-registered role), but is_suspended is handled by
-    its own dedicated suspend/unsuspend endpoint instead of here, to keep
-    that action auditable as a single explicit intent rather than a side
-    effect of a generic PATCH.
+    Passwords are never handled here. Suspending has its own endpoint so it
+    stays a single deliberate action. The admin's own account (and the last
+    active admin) is protected by services.check_user_update.
     """
 
     class Meta:
@@ -79,6 +83,14 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
             "is_active",
         )
 
+    def validate_full_name(self, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError("Name is required.")
+
+        return value
+
     def validate_email(self, value: str) -> str:
         value = value.strip().lower()
 
@@ -88,31 +100,23 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
             queryset = queryset.exclude(pk=self.instance.pk)
 
         if queryset.exists():
-            raise serializers.ValidationError(
-                "A user with this email already exists."
-            )
+            raise serializers.ValidationError("A user with this email already exists.")
 
         return value
 
     def validate_mobile_number(self, value: str) -> str:
-        value = value.strip()
+        try:
+            mobile = normalize_admin_mobile(value)
+        except ValueError as error:
+            raise serializers.ValidationError(str(error))
 
-        if not value.isdigit() or not (10 <= len(value) <= 15):
-            raise serializers.ValidationError(
-                "Mobile number must contain 10-15 digits only."
-            )
+        # Matches however the other account's number was typed or stored.
+        existing = get_user_by_mobile(mobile)
 
-        queryset = User.objects.filter(mobile_number=value)
+        if existing is not None and (self.instance is None or existing.pk != self.instance.pk):
+            raise serializers.ValidationError("A user with this mobile number already exists.")
 
-        if self.instance is not None:
-            queryset = queryset.exclude(pk=self.instance.pk)
-
-        if queryset.exists():
-            raise serializers.ValidationError(
-                "A user with this mobile number already exists."
-            )
-
-        return value
+        return mobile
 
 
 # --------------------------------------------------
@@ -120,13 +124,11 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
 # --------------------------------------------------
 
 class AdminMembershipPlanSerializer(serializers.ModelSerializer):
-    """Full read/write serializer for admin plan CRUD (unlike the public,
-    read-only MembershipPlanSerializer in the memberships app).
+    """Full read/write serializer for admin plan CRUD.
 
-    Phase 26 fix: the old "templates" field no longer exists on
-    MembershipPlan (removed in Phase 17), so it is replaced by the three
-    quota fields that took its place: total_invitations, template_limit
-    and voice_call_limit.
+    guest_limit, event_limit and storage_limit_mb are required numbers: the
+    database column cannot hold "unlimited" for them. total_invitations,
+    template_limit and voice_call_limit can be empty (= unlimited).
     """
 
     class Meta:
@@ -154,6 +156,14 @@ class AdminMembershipPlanSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "created_at", "updated_at")
 
+    def validate_name(self, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError("Name is required.")
+
+        return value
+
     def validate_slug(self, value: str) -> str:
         value = value.strip().lower()
 
@@ -163,9 +173,19 @@ class AdminMembershipPlanSerializer(serializers.ModelSerializer):
             queryset = queryset.exclude(pk=self.instance.pk)
 
         if queryset.exists():
-            raise serializers.ValidationError(
-                "A plan with this slug already exists."
-            )
+            raise serializers.ValidationError("A plan with this slug already exists.")
+
+        return value
+
+    def validate_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Price cannot be negative.")
+
+        return value
+
+    def validate_duration_days(self, value: int) -> int:
+        if value < 1:
+            raise serializers.ValidationError("A plan must last at least 1 day.")
 
         return value
 
@@ -192,6 +212,36 @@ class AdminInvitationTemplateSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "created_at", "updated_at")
 
+    @staticmethod
+    def _check_image_size(value):
+        if value is not None and getattr(value, "size", 0) > MAX_TEMPLATE_IMAGE_BYTES:
+            raise serializers.ValidationError("Image is too large. The limit is 10 MB.")
+
+        return value
+
+    def validate_preview_image(self, value):
+        if value is not None:
+            validate_image_content(value)
+
+        return self._check_image_size(value)
+
+    def validate_background_image(self, value):
+        if value is not None:
+            validate_image_content(value)
+
+        return self._check_image_size(value)
+
+    def validate(self, attrs: dict) -> dict:
+        """A new library template needs its card design, otherwise organizers
+        would pick a blank template that cannot render an invitation."""
+
+        if self.instance is None and not attrs.get("background_image"):
+            raise serializers.ValidationError(
+                {"background_image": "Upload the template's background image."}
+            )
+
+        return attrs
+
 
 # --------------------------------------------------
 # Media Management
@@ -201,9 +251,7 @@ class AdminGalleryMediaSerializer(serializers.ModelSerializer):
     """Read serializer for the admin's media management list."""
 
     event_name = serializers.CharField(source="event.name", read_only=True)
-    uploaded_by_name = serializers.CharField(
-        source="uploaded_by.full_name", read_only=True, default=None
-    )
+    uploaded_by_name = serializers.CharField(source="uploaded_by.full_name", read_only=True, default=None)
 
     class Meta:
         model = GalleryMedia
@@ -228,29 +276,22 @@ class AdminGalleryMediaSerializer(serializers.ModelSerializer):
 # --------------------------------------------------
 
 class RevenueReportPointSerializer(serializers.Serializer):
-    """One bucket (e.g. one day or month) of revenue."""
-
     period = serializers.CharField()
-    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, coerce_to_string=False)
 
 
 class RegistrationsReportPointSerializer(serializers.Serializer):
-    """One bucket of new user registrations."""
-
     period = serializers.CharField()
     count = serializers.IntegerField()
 
 
 class MembershipStatsSerializer(serializers.Serializer):
-    """Subscriber count per plan."""
-
     plan_name = serializers.CharField()
     active_subscribers = serializers.IntegerField()
 
 
 class AdminReportsSerializer(serializers.Serializer):
-    """Combined reports payload: Revenue, Registrations, Active Events,
-    Membership Statistics, Storage Usage - matching the Phase 14 spec."""
+    """Revenue, Registrations, Active Events, Membership Statistics, Storage."""
 
     revenue_by_period = RevenueReportPointSerializer(many=True)
     registrations_by_period = RegistrationsReportPointSerializer(many=True)
@@ -260,15 +301,15 @@ class AdminReportsSerializer(serializers.Serializer):
 
 
 # --------------------------------------------------
-# Phase 26: platform channel pools + topup packs (admin-managed)
+# Platform channel pools + topup packs
 # --------------------------------------------------
 
 class PlatformChannelPoolSerializer(serializers.ModelSerializer):
-    """Serializer for admin viewing/monitoring a platform channel pool.
+    """A platform channel pool for the admin.
 
     `is_configured` is False for a channel that has never been topped up
-    (no database row yet). Such a channel is UNLIMITED as far as sending
-    is concerned, so it must never be reported as low or exhausted.
+    (no database row yet). Such a channel is UNLIMITED as far as sending is
+    concerned, so it is never reported as low or exhausted.
     """
 
     channel_display = serializers.CharField(source="get_channel_display", read_only=True)
@@ -308,23 +349,21 @@ class PlatformChannelPoolSerializer(serializers.ModelSerializer):
 
 
 class PlatformPoolTopupCreateSerializer(serializers.Serializer):
-    """Serializer for validating an admin request to top up a pool."""
+    """An admin request to top up a pool (and optionally change the
+    low-balance warning level)."""
 
     channel = serializers.ChoiceField(choices=PlatformChannelPool.Channel.choices)
-    amount = serializers.IntegerField(min_value=1)
-    note = serializers.CharField(required=False, allow_blank=True, default="")
+    amount = serializers.IntegerField(min_value=1, max_value=MAX_POOL_TOPUP)
+    note = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+    low_balance_threshold = serializers.IntegerField(required=False, min_value=0, max_value=MAX_POOL_TOPUP)
 
 
 class PlatformPoolTopupSerializer(serializers.ModelSerializer):
-    """Serializer for reading a pool's topup history (audit trail)."""
+    """A pool's topup history (audit trail)."""
 
     channel = serializers.CharField(source="pool.channel", read_only=True)
     channel_display = serializers.CharField(source="pool.get_channel_display", read_only=True)
-    topped_up_by_name = serializers.CharField(
-        source="topped_up_by.full_name",
-        read_only=True,
-        default=None,
-    )
+    topped_up_by_name = serializers.CharField(source="topped_up_by.full_name", read_only=True, default=None)
 
     class Meta:
         model = PlatformPoolTopup
@@ -341,7 +380,7 @@ class PlatformPoolTopupSerializer(serializers.ModelSerializer):
 
 
 class AdminTopupPackSerializer(serializers.ModelSerializer):
-    """Serializer for admin CRUD on topup packs (the fixed packs organizers can buy)."""
+    """Admin CRUD on topup packs (the fixed packs organizers can buy)."""
 
     class Meta:
         model = TopupPack
@@ -356,8 +395,22 @@ class AdminTopupPackSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id",)
 
+    def validate_name(self, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError("Name is required.")
+
+        return value
+
     def validate_quantity(self, value: int) -> int:
         if value < 1:
             raise serializers.ValidationError("Quantity must be at least 1.")
+
+        return value
+
+    def validate_price(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Price must be more than 0.")
 
         return value

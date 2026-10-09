@@ -7,7 +7,9 @@ subset needed here (one VEVENT, a few fields, correct line folding) is
 small and stable.
 """
 
-from datetime import datetime, timedelta
+import html
+from datetime import datetime, time, timedelta, timezone
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.utils.html import strip_tags
@@ -32,7 +34,7 @@ def resolve_schedule(invitation) -> dict:
 
     event = invitation.event
 
-    start_time = event.event_time
+    start_time = event.event_time or time(0, 0)
     end_time = getattr(event, "event_end_time", None)
     accent_color = ""
 
@@ -80,36 +82,63 @@ def _escape_ics_text(value: str) -> str:
     """Escape text per RFC 5545 (section 3.3.11): backslash, semicolon,
     comma, and newlines need escaping inside TEXT values."""
 
+    value = (value or "").replace("\r\n", "\n").replace("\r", "\n")
+
     return (
         value.replace("\\", "\\\\")
-        .replace(";", "\;")
+        .replace(";", "\\;")
         .replace(",", "\\,")
         .replace("\n", "\\n")
     )
 
 
 def _fold_line(line: str) -> str:
-    """Fold lines longer than 75 octets per RFC 5545 (section 3.1), since
-    some calendar clients reject unfolded long lines."""
+    """Fold lines longer than 75 OCTETS (not characters) per RFC 5545
+    (section 3.1). Names with Malayalam / Hindi text are 3 bytes per
+    character, so a character count would produce lines that are too long
+    and some calendar apps would reject the file. A character is never
+    split across two lines."""
 
-    if len(line) <= 75:
+    if len(line.encode("utf-8")) <= 75:
         return line
 
-    folded = [line[:75]]
-    rest = line[75:]
+    parts: list[str] = []
+    current = ""
+    current_bytes = 0
+    limit = 75
 
-    while rest:
-        folded.append(" " + rest[:74])
-        rest = rest[74:]
+    for char in line:
+        size = len(char.encode("utf-8"))
 
-    return "\r\n".join(folded)
+        if current_bytes + size > limit:
+            parts.append(current)
+            current = char
+            current_bytes = size
+            # Continuation lines start with one space, which counts too.
+            limit = 74
+        else:
+            current += char
+            current_bytes += size
+
+    if current:
+        parts.append(current)
+
+    return "\r\n ".join(parts)
+
+
+def _plain_text(value: str) -> str:
+    """Event descriptions may hold HTML; calendars want plain text."""
+
+    return html.unescape(strip_tags(value or "")).strip()
 
 
 def _description_text(event) -> str:
     lines = [f"You're invited to {event.name}."]
 
-    if event.description:
-        lines.append(strip_tags(event.description))
+    description = _plain_text(event.description)
+
+    if description:
+        lines.append(description)
 
     return "\n".join(lines)
 
@@ -118,16 +147,29 @@ def _location_text(event) -> str:
     return ", ".join(part for part in (event.venue_name, event.address) if part)
 
 
+def _safe_http_url(value: str) -> str:
+    """Only plain http(s) links, no whitespace - anything else is dropped."""
+
+    value = (value or "").strip()
+
+    if value.lower().startswith(("http://", "https://")) and not any(
+        char.isspace() for char in value
+    ):
+        return value
+
+    return ""
+
+
 def build_google_calendar_url(event, start_dt: datetime, end_dt: datetime) -> str:
     """A link that opens Google Calendar with the event already filled in -
     the guest only has to press Save."""
 
-    from urllib.parse import urlencode
-
     details = _description_text(event)
 
-    if event.google_maps_link:
-        details += f"\n\nMap: {event.google_maps_link}"
+    maps_link = _safe_http_url(event.google_maps_link)
+
+    if maps_link:
+        details += f"\n\nMap: {maps_link}"
 
     params = {
         "action": "TEMPLATE",
@@ -141,7 +183,12 @@ def build_google_calendar_url(event, start_dt: datetime, end_dt: datetime) -> st
     return "https://calendar.google.com/calendar/render?" + urlencode(params)
 
 
-def build_event_ics(event, guest, start_dt: datetime | None = None, end_dt: datetime | None = None) -> bytes:
+def build_event_ics(
+    event,
+    guest,
+    start_dt: datetime | None = None,
+    end_dt: datetime | None = None,
+) -> bytes:
     """Build a single-VEVENT .ics file for one guest's invitation.
 
     start_dt / end_dt come from resolve_schedule(); when omitted the
@@ -162,7 +209,7 @@ def build_event_ics(event, guest, start_dt: datetime | None = None, end_dt: date
         else:
             end_dt = start_dt + EVENT_DURATION
 
-    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     dtstart = start_dt.strftime("%Y%m%dT%H%M%S")
     dtend = end_dt.strftime("%Y%m%dT%H%M%S")
 
@@ -171,6 +218,7 @@ def build_event_ics(event, guest, start_dt: datetime | None = None, end_dt: date
     location = _escape_ics_text(_location_text(event))
 
     uid = f"invitation-{event.pk}-{guest.pk}@lavernaevents.com"
+    time_zone = getattr(settings, "TIME_ZONE", "Asia/Kolkata")
 
     lines = [
         "BEGIN:VCALENDAR",
@@ -178,6 +226,7 @@ def build_event_ics(event, guest, start_dt: datetime | None = None, end_dt: date
         "PRODID:-//LavernaEvents//Invitation//EN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
+        f"X-WR-TIMEZONE:{time_zone}",
         "BEGIN:VEVENT",
         f"UID:{uid}",
         f"DTSTAMP:{dtstamp}",
@@ -192,8 +241,11 @@ def build_event_ics(event, guest, start_dt: datetime | None = None, end_dt: date
     if location:
         lines.append(f"LOCATION:{location}")
 
-    if event.google_maps_link:
-        lines.append(f"URL:{_escape_ics_text(event.google_maps_link)}")
+    # URL is a URI value, not TEXT: it must not be text-escaped.
+    maps_link = _safe_http_url(event.google_maps_link)
+
+    if maps_link:
+        lines.append(f"URL:{maps_link}")
 
     lines.extend(
         [

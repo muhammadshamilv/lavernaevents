@@ -4,6 +4,7 @@ import type {
   CreateCheckoutSessionResponse,
   CreateTopupCheckoutSessionResponse,
   Payment,
+  PaymentHistoryItem,
   TopupPurchase,
 } from "@/types/payment.types";
 
@@ -24,10 +25,6 @@ export async function getPaymentStatus(sessionId: string): Promise<Payment> {
   return data.data;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 26: organizer topup pack purchases
-// ---------------------------------------------------------------------------
-
 export async function createTopupCheckoutSession(
   packId: number
 ): Promise<CreateTopupCheckoutSessionResponse> {
@@ -41,6 +38,13 @@ export async function createTopupCheckoutSession(
 export async function getTopupPurchaseStatus(sessionId: string): Promise<TopupPurchase> {
   const { data } = await apiClient.get<ApiResponse<TopupPurchase>>(
     `/payments/topup/status/${sessionId}/`
+  );
+  return data.data;
+}
+
+export async function getPaymentHistory(): Promise<PaymentHistoryItem[]> {
+  const { data } = await apiClient.get<ApiResponse<PaymentHistoryItem[]>>(
+    "/payments/history/"
   );
   return data.data;
 }

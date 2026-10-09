@@ -9,6 +9,8 @@ class EventDashboardSerializer(serializers.Serializer):
     rejected_count = serializers.IntegerField()
     maybe_count = serializers.IntegerField()
     pending_count = serializers.IntegerField()
+    # Share of guests who have answered, 0.0 - 1.0.
+    response_rate = serializers.FloatField()
     invitations_sent = serializers.IntegerField()
     invitations_not_sent = serializers.IntegerField()
     invitations_failed = serializers.IntegerField()
@@ -16,6 +18,7 @@ class EventDashboardSerializer(serializers.Serializer):
     whatsapp_sent_count = serializers.IntegerField()
     email_sent_count = serializers.IntegerField()
     sms_sent_count = serializers.IntegerField()
+    voice_call_sent_count = serializers.IntegerField()
     expected_attendance = serializers.IntegerField()
 
 
@@ -35,10 +38,6 @@ class OrganizerOverviewSerializer(serializers.Serializer):
     total_expected_attendance = serializers.IntegerField()
 
 
-# ---------------------------------------------------------------------
-# Phase 25: invitation-focused dashboard overhaul
-# ---------------------------------------------------------------------
-
 class ChannelTotalsSerializer(serializers.Serializer):
     sent = serializers.IntegerField()
     failed = serializers.IntegerField()
@@ -48,6 +47,7 @@ class EventNeedingAttentionSerializer(serializers.Serializer):
     event_id = serializers.IntegerField()
     event_name = serializers.CharField()
     event_date = serializers.DateField()
+    # Both counts are for guests who were already invited.
     total_guests = serializers.IntegerField()
     pending_count = serializers.IntegerField()
     pending_rate = serializers.FloatField()
@@ -62,11 +62,11 @@ class QuotaUsageSerializer(serializers.Serializer):
     voice_calls_used = serializers.IntegerField()
     voice_calls_total = serializers.IntegerField(allow_null=True)
     voice_calls_remaining = serializers.IntegerField(allow_null=True)
-    expires_at = serializers.DateTimeField()
+    expires_at = serializers.DateTimeField(allow_null=True)
 
 
 class OrganizerInvitationOverviewSerializer(serializers.Serializer):
-    """Serializer for the Phase 25 full dashboard payload."""
+    """Serializer for the full dashboard payload."""
 
     total_events = serializers.IntegerField()
     total_guests = serializers.IntegerField()

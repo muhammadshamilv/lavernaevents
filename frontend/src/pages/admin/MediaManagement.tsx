@@ -54,6 +54,7 @@ export default function MediaManagement() {
           </p>
         </div>
         <Select
+          aria-label="Filter by media type"
           value={mediaType}
           onChange={(e) => {
             setMediaType(e.target.value as "IMAGE" | "VIDEO" | "");
@@ -83,7 +84,7 @@ export default function MediaManagement() {
             const previewUrl = resolveMediaUrl(item.thumbnail || (item.media_type === "IMAGE" ? item.file : null));
 
             return (
-              <Card key={item.id} className="group relative overflow-hidden">
+              <Card key={item.id} className="relative overflow-hidden">
                 <div className="flex aspect-square items-center justify-center bg-slate-100">
                   {previewUrl ? (
                     <img src={previewUrl} alt={item.caption || item.event_name} className="h-full w-full object-cover" />
@@ -97,13 +98,13 @@ export default function MediaManagement() {
                 <button
                   type="button"
                   onClick={() => setDeletingMedia(item)}
-                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-rose-600 opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+                  className="absolute right-1.5 top-1.5 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-rose-600 shadow-sm"
                   aria-label="Delete media"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
 
-                <div className="p-2.5">
+                <div className="p-2.5 pr-3">
                   <p className="truncate text-xs font-semibold text-[var(--brand-navy)]">
                     {item.event_name}
                   </p>
@@ -141,7 +142,7 @@ export default function MediaManagement() {
       <ConfirmDialog
         open={!!deletingMedia}
         title="Delete this media?"
-        description="This permanently removes the file from the event's gallery."
+        description="This permanently removes the file from the event's gallery. The organizer and the photographer will no longer see it."
         confirmLabel="Delete"
         destructive
         isLoading={deleteMutation.isPending}

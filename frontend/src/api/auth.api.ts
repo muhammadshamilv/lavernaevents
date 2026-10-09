@@ -1,9 +1,14 @@
 import { apiClient } from "./client";
 import type { ApiResponse } from "@/types/api.types";
 import type {
+  ChangePasswordPayload,
+  CooldownResult,
+  ForgotPasswordPayload,
   LoginPayload,
   RegisterPayload,
   ResendOtpPayload,
+  ResetPasswordPayload,
+  UpdateProfilePayload,
   User,
   VerifyMobilePayload,
   VerifyMobileResult,
@@ -39,11 +44,48 @@ export async function verifyMobile(
   return data.data;
 }
 
-export async function resendOtp(payload: ResendOtpPayload): Promise<void> {
-  await apiClient.post<ApiResponse<Record<string, never>>>(
+export async function resendOtp(payload: ResendOtpPayload): Promise<CooldownResult> {
+  const { data } = await apiClient.post<ApiResponse<CooldownResult>>(
     "/auth/resend-otp/",
     payload
   );
+  return data.data ?? {};
+}
+
+export async function forgotPassword(
+  payload: ForgotPasswordPayload
+): Promise<CooldownResult> {
+  const { data } = await apiClient.post<ApiResponse<CooldownResult>>(
+    "/auth/forgot-password/",
+    payload
+  );
+  return data.data ?? {};
+}
+
+export async function resetPassword(payload: ResetPasswordPayload): Promise<void> {
+  await apiClient.post<ApiResponse<Record<string, never>>>(
+    "/auth/reset-password/",
+    payload
+  );
+}
+
+export async function changePassword(payload: ChangePasswordPayload): Promise<void> {
+  await apiClient.post<ApiResponse<Record<string, never>>>(
+    "/auth/change-password/",
+    payload
+  );
+}
+
+export async function updateProfile(payload: UpdateProfilePayload): Promise<User> {
+  const form = new FormData();
+
+  if (payload.full_name !== undefined) form.append("full_name", payload.full_name);
+  if (payload.profile_image) form.append("profile_image", payload.profile_image);
+
+  const { data } = await apiClient.patch<ApiResponse<User>>("/auth/me/", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data.data;
 }
 
 export async function getCurrentUser(): Promise<User> {

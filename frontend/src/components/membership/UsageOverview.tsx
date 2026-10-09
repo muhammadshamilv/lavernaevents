@@ -7,17 +7,22 @@ function QuotaBar({
   used,
   limit,
   remaining,
+  topup = 0,
 }: {
   label: string;
   used: number | null;
+  /** The plan's own allowance (null = unlimited). */
   limit: number | null;
   remaining: number | null;
+  /** Extra allowance bought on top of the plan. */
+  topup?: number | null;
 }) {
   const isUnlimited = limit === null;
+  // Top-ups extend the plan limit, so "used / total" and "left" agree.
+  const total = isUnlimited ? null : limit + (topup ?? 0);
   const percentUsed =
-    !isUnlimited && limit > 0 && used !== null
-      ? Math.min((used / limit) * 100, 100)
-      : 0;
+    total !== null && total > 0 && used !== null ? Math.min((used / total) * 100, 100) : 0;
+  const nearlyOut = percentUsed >= 90;
 
   return (
     <div>
@@ -26,16 +31,26 @@ function QuotaBar({
         <span className="text-slate-500">
           {isUnlimited
             ? "Unlimited"
-            : `${used ?? 0} / ${limit} used${remaining !== null ? ` · ${remaining} left` : ""}`}
+            : `${used ?? 0} / ${total} used${remaining !== null ? ` · ${remaining} left` : ""}`}
         </span>
       </div>
       {!isUnlimited && (
-        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          role="progressbar"
+          aria-label={`${label} used`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(percentUsed)}
+          className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100"
+        >
           <div
-            className="h-full rounded-full bg-[var(--brand-pink)] transition-all"
+            className={`h-full rounded-full transition-all ${nearlyOut ? "bg-rose-500" : "bg-[var(--brand-pink)]"}`}
             style={{ width: `${percentUsed}%` }}
           />
         </div>
+      )}
+      {!isUnlimited && !!topup && topup > 0 && (
+        <p className="mt-1 text-xs text-slate-400">Includes {topup} extra from top-ups.</p>
       )}
     </div>
   );
@@ -91,6 +106,7 @@ export default function UsageOverview() {
           used={usage.invitations_used}
           limit={usage.total_invitations}
           remaining={usage.invitations_remaining}
+          topup={usage.invitations_topup}
         />
         <QuotaBar
           label="Template library"
@@ -103,6 +119,7 @@ export default function UsageOverview() {
           used={usage.voice_calls_used}
           limit={usage.voice_call_limit}
           remaining={usage.voice_calls_remaining}
+          topup={usage.voice_calls_topup}
         />
       </div>
 

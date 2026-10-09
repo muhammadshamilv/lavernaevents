@@ -4,6 +4,7 @@ import type {
   CreateEventPayload,
   Event,
   EventListItem,
+  EventListParams,
   UpdateEventPayload,
 } from "@/types/event.types";
 
@@ -38,19 +39,22 @@ function buildEventFormData(payload: EventPayload): FormData {
 }
 
 // apiClient sets a default "Content-Type: application/json" header on the
-// whole instance. Verified against the installed axios (1.19)'s
-// transformRequest: it only skips JSON-stringifying a FormData body when
-// the EFFECTIVE Content-Type header does NOT already say
-// "application/json" - an inherited instance default counts. So sending
-// FormData through apiClient without this override would have axios
-// silently JSON.stringify() the FormData (losing the file entirely)
-// instead of sending it as multipart. Explicitly clearing the header per
-// request is required, not optional, given how this apiClient is configured.
+// whole instance. axios only skips JSON-stringifying a FormData body when the
+// EFFECTIVE Content-Type is not already application/json, so it must be
+// cleared per request for multipart uploads.
 const MULTIPART_CONFIG = { headers: { "Content-Type": undefined } };
 
-export async function getEvents(page = 1): Promise<EventsPage> {
+// Accepts a bare page number (older callers) or a full params object.
+export async function getEvents(arg: number | EventListParams = 1): Promise<EventsPage> {
+  const params: EventListParams = typeof arg === "number" ? { page: arg } : arg;
+
+  const query: Record<string, string | number> = { page: params.page ?? 1 };
+  if (params.search?.trim()) query.search = params.search.trim();
+  if (params.status) query.status = params.status;
+  if (params.when) query.when = params.when;
+
   const { data } = await apiClient.get<PaginatedResponse<EventListItem>>("/events/", {
-    params: { page },
+    params: query,
   });
 
   return { events: data.data, pagination: data.pagination };
