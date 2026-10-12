@@ -538,6 +538,9 @@ CASHFREE_APP_ID = config("CASHFREE_APP_ID", default="")
 CASHFREE_SECRET_KEY = config("CASHFREE_SECRET_KEY", default="")
 CASHFREE_ENV = config("CASHFREE_ENV", default="sandbox")
 CASHFREE_API_VERSION = config("CASHFREE_API_VERSION", default="2025-01-01")
+# Send Cashfree the webhook address (notify_url) with every order. Switch
+# off (false) only to test; payments are still confirmed by the status page.
+CASHFREE_SEND_NOTIFY_URL = config("CASHFREE_SEND_NOTIFY_URL", default=True, cast=bool)
 
 TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default="")
 TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default="")

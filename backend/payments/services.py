@@ -211,7 +211,7 @@ def _create_cashfree_order(user, order_id: str, price, return_url: str) -> dict:
     # still confirms the payment by asking Cashfree directly).
     backend_url = (getattr(settings, "PUBLIC_BACKEND_URL", "") or "").rstrip("/")
 
-    if backend_url.startswith("https://"):
+    if backend_url.startswith("https://") and getattr(settings, "CASHFREE_SEND_NOTIFY_URL", True):
         order_meta["notify_url"] = f"{backend_url}/api/payments/webhook/"
 
     data = _cashfree_request(

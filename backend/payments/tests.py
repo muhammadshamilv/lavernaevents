@@ -142,6 +142,12 @@ class CreateOrderTests(CashfreeTestBase):
 
         self.assertEqual(response.json()["data"]["payment_session_id"], "session_xyzpaymentpayment")
 
+    @override_settings(CASHFREE_SEND_NOTIFY_URL=False)
+    def test_notify_url_can_be_switched_off(self):
+        calls = self.fake_cashfree(order_status="ACTIVE")
+        self.client.post("/api/payments/create-checkout-session/", {"plan_slug": "gold"}, format="json")
+        self.assertNotIn("notify_url", calls[0][2]["order_meta"])
+
     @override_settings(PUBLIC_BACKEND_URL="http://localhost:8000")
     def test_notify_url_skipped_on_local_http(self):
         calls = self.fake_cashfree(order_status="ACTIVE")
