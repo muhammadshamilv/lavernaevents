@@ -5,7 +5,7 @@ from .views import (
     CreateTopupCheckoutSessionView,
     PaymentHistoryView,
     PaymentStatusView,
-    StripeWebhookView,
+    CashfreeWebhookView,
     TopupPurchaseStatusView,
 )
 
@@ -13,7 +13,7 @@ from .views import (
 urlpatterns = [
     path("create-checkout-session/", CreateCheckoutSessionView.as_view(), name="create-checkout-session"),
     path("status/<str:session_id>/", PaymentStatusView.as_view(), name="payment-status"),
-    path("webhook/", StripeWebhookView.as_view(), name="stripe-webhook"),
+    path("webhook/", CashfreeWebhookView.as_view(), name="cashfree-webhook"),
     path("history/", PaymentHistoryView.as_view(), name="payment-history"),
 
     # Organizer topup pack purchases

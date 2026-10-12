@@ -8,7 +8,7 @@ called, so no view file needs editing:
   the table VIEW_RULES below (keyed by the view's class name) is used;
 * every request is ALSO counted against a generous catch-all
   ("user" for signed-in people, "anon" per IP for everyone else);
-* webhook views (signature-checked, called by Stripe/Twilio servers) are
+* webhook views (signature-checked, called by Cashfree/Twilio servers) are
   exempt, because many requests legitimately come from a few shared IPs.
 
 ``kind`` is what the counter is keyed on:
@@ -62,9 +62,9 @@ VIEW_RULES = {
     "SendPendingWhatsAppReminderView": (("send", "user"),),
 }
 
-# Called by Stripe / Twilio servers; protected by signature checks instead.
+# Called by Cashfree / Twilio servers; protected by signature checks instead.
 EXEMPT_VIEWS = frozenset(
-    {"StripeWebhookView", "VoiceTwiMLView", "TwilioCallStatusCallbackView"}
+    {"CashfreeWebhookView", "VoiceTwiMLView", "TwilioCallStatusCallbackView"}
 )
 
 # Methods that never change anything are not counted against "send"/"upload"

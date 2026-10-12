@@ -26,6 +26,7 @@ import {
   useSubscribeMutation,
 } from "@/queries/useMembershipQueries";
 import { useCreateCheckoutSessionMutation } from "@/queries/usePaymentQueries";
+import { CHECKOUT_LOAD_ERROR, startCashfreeCheckout } from "@/lib/cashfree";
 import { useAuthStore } from "@/stores/auth.store";
 import { formatPrice, formatStorage } from "@/lib/format";
 import { countLabel, includedLabel } from "@/lib/planLabels";
@@ -169,6 +170,9 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
   const [searchParams] = useSearchParams();
   const highlightedSlug = searchParams.get("plan");
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  // Slug of the plan whose Cashfree checkout page is opening, and a failure to open it.
+  const [launchingSlug, setLaunchingSlug] = useState<string | null>(null);
+  const [launchErrorSlug, setLaunchErrorSlug] = useState<string | null>(null);
 
   const subscribeMutation = useSubscribeMutation();
   const changePlanMutation = useChangePlanMutation();
@@ -182,7 +186,7 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
   const runSelection = (plan: MembershipPlan) => {
     const isFree = Number(plan.price) === 0;
 
-    // Free plans never touch Stripe: first activation uses subscribe,
+    // Free plans never touch the payment gateway: first activation uses subscribe,
     // switching from another plan uses change-plan.
     if (isFree) {
       if (hasActivePlan) {
@@ -195,9 +199,14 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
 
     // Paid plans ALWAYS go through checkout, including an upgrade from an
     // existing plan. The backend swaps the plans once the payment succeeds.
+    setLaunchErrorSlug(null);
     checkoutMutation.mutate(plan.slug, {
       onSuccess: (result) => {
-        window.location.href = result.checkout_url;
+        setLaunchingSlug(plan.slug);
+        startCashfreeCheckout(result).catch(() => {
+          setLaunchingSlug(null);
+          setLaunchErrorSlug(plan.slug);
+        });
       },
     });
   };
@@ -282,7 +291,8 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
               const isPending =
                 (subscribeMutation.isPending && subscribeMutation.variables === plan.slug) ||
                 (changePlanMutation.isPending && changePlanMutation.variables === plan.slug) ||
-                (checkoutMutation.isPending && checkoutMutation.variables === plan.slug);
+                (checkoutMutation.isPending && checkoutMutation.variables === plan.slug) ||
+                launchingSlug === plan.slug;
               const cardError =
                 (subscribeMutation.isError && subscribeMutation.variables === plan.slug
                   ? getApiErrorMessage(subscribeMutation.error, "Couldn't select this plan.")
@@ -292,7 +302,8 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
                   : null) ??
                 (checkoutMutation.isError && checkoutMutation.variables === plan.slug
                   ? getApiErrorMessage(checkoutMutation.error, "Couldn't start checkout.")
-                  : null);
+                  : null) ??
+                (launchErrorSlug === plan.slug ? CHECKOUT_LOAD_ERROR : null);
 
               return (
                 <Card

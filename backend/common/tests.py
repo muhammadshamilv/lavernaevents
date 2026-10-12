@@ -48,7 +48,7 @@ class _Webhook(APIView):
         return Response({"ok": True})
 
 
-_Webhook.__name__ = "StripeWebhookView"
+_Webhook.__name__ = "CashfreeWebhookView"
 
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "t"}}
 
@@ -199,7 +199,7 @@ EXPECTED_PUBLIC_VIEWS = {
     "UserRegistrationView", "UserLoginView", "UserTokenRefreshView", "UserLogoutView",
     "ForgotPasswordView", "ResetPasswordView", "VerifyMobileView", "ResendOTPView",
     "MembershipPlanListView", "MembershipPlanDetailView",
-    "StripeWebhookView",
+    "CashfreeWebhookView",
     "InvitationResponsePageView", "InvitationCalendarView",
     "ScannedEventView", "GuestSelfieMatchView", "GuestMediaDownloadView",
     "VoiceTwiMLView", "TwilioCallStatusCallbackView",

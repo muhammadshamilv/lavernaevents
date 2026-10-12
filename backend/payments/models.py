@@ -3,7 +3,7 @@ from django.db import models
 
 
 class Payment(TimeStampedModel):
-    """Tracks a Stripe payment attempt for a membership plan purchase."""
+    """Tracks an online (Cashfree) payment attempt for a membership plan purchase."""
 
     class Status(models.TextChoices):
         CREATED = "CREATED", "Created"

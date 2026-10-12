@@ -530,9 +530,14 @@ DEFAULT_COUNTRY_CODE = config("DEFAULT_COUNTRY_CODE", default="91")
 # Twilio voice callbacks). On Render this is your https://<name>.onrender.com URL.
 PUBLIC_BACKEND_URL = config("PUBLIC_BACKEND_URL", default="")
 
-STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
-STRIPE_PUBLISHABLE_KEY = config("STRIPE_PUBLISHABLE_KEY", default="")
-STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")
+# Cashfree Payment Gateway (UPI QR / UPI apps / cards / netbanking).
+# CASHFREE_ENV is "sandbox" (test money) or "production" (real money).
+# The webhook signature uses the same secret key, so there is no separate
+# webhook secret.
+CASHFREE_APP_ID = config("CASHFREE_APP_ID", default="")
+CASHFREE_SECRET_KEY = config("CASHFREE_SECRET_KEY", default="")
+CASHFREE_ENV = config("CASHFREE_ENV", default="sandbox")
+CASHFREE_API_VERSION = config("CASHFREE_API_VERSION", default="2025-01-01")
 
 TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default="")
 TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default="")

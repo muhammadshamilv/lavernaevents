@@ -17,7 +17,6 @@ qrcode==8.2
 reportlab==5.0.0
 requests==2.34.2
 sqlparse==0.6.0
-stripe==15.6.1
 twilio==9.4.1
 celery==5.5.1
 redis==5.2.1

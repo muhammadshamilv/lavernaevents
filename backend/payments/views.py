@@ -1,17 +1,12 @@
 # backend/payments/views.py
+import json
 import logging
 
-import stripe
 from django.conf import settings
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-try:  # stripe-python >= 8
-    from stripe import SignatureVerificationError
-except ImportError:  # pragma: no cover - older stripe-python
-    from stripe.error import SignatureVerificationError
 
 from .serializers import (
     CreateCheckoutSessionSerializer,
@@ -27,9 +22,8 @@ from .services import (
     get_payment_history,
     get_payment_status,
     get_topup_purchase_status,
-    handle_checkout_completed,
-    handle_checkout_failed,
-    handle_topup_checkout_completed,
+    handle_webhook_event,
+    verify_webhook_signature,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +40,8 @@ PAYMENT_ERROR_STATUS_MAP = {
     "organizer_only": status.HTTP_403_FORBIDDEN,
     "mobile_not_verified": status.HTTP_403_FORBIDDEN,
     "payments_not_configured": status.HTTP_503_SERVICE_UNAVAILABLE,
-    "stripe_error": status.HTTP_502_BAD_GATEWAY,
+    "gateway_error": status.HTTP_502_BAD_GATEWAY,
+    "amount_mismatch": status.HTTP_409_CONFLICT,
 }
 
 
@@ -66,7 +61,7 @@ def _frontend_url() -> str:
 
 
 class CreateCheckoutSessionView(APIView):
-    """Create a Stripe Checkout Session for purchasing a PAID membership plan."""
+    """Create a Cashfree order for purchasing a PAID membership plan."""
 
     permission_classes = [IsAuthenticated]
 
@@ -82,11 +77,10 @@ class CreateCheckoutSessionView(APIView):
         frontend_url = _frontend_url()
 
         try:
-            payment, checkout_url = create_checkout_session(
+            payment, checkout = create_checkout_session(
                 user=request.user,
                 plan_slug=serializer.validated_data["plan_slug"],
-                success_url=f"{frontend_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{frontend_url}/payment/cancelled",
+                return_url=f"{frontend_url}/payment/success?session_id={{order_id}}",
             )
         except PaymentError as error:
             return _payment_error_response(error, "plan_slug")
@@ -95,17 +89,14 @@ class CreateCheckoutSessionView(APIView):
             {
                 "success": True,
                 "message": "Checkout session created successfully.",
-                "data": {
-                    "checkout_url": checkout_url,
-                    "stripe_checkout_session_id": payment.stripe_checkout_session_id,
-                },
+                "data": checkout,
             },
             status=status.HTTP_201_CREATED,
         )
 
 
 class PaymentStatusView(APIView):
-    """Status of a plan payment after returning from Stripe Checkout."""
+    """Status of a plan payment after returning from Cashfree checkout."""
 
     permission_classes = [IsAuthenticated]
 
@@ -125,86 +116,77 @@ class PaymentStatusView(APIView):
         )
 
 
-class StripeWebhookView(APIView):
-    """Receive and verify Stripe webhook events.
+class CashfreeWebhookView(APIView):
+    """Receive and verify Cashfree webhooks.
 
     The TRUSTED confirmation path for payment success: the browser redirect
-    after checkout only shows a "processing" screen. Events handled:
+    after checkout only shows a "processing" screen. The signature is checked
+    over the RAW request body, then the order is re-fetched from Cashfree
+    before anything is activated.
 
-      checkout.session.completed / async_payment_succeeded -> activate
-      checkout.session.expired   / async_payment_failed    -> mark FAILED
-
-    Replies 200 for events it understood (even when it logs a problem, so
-    Stripe does not retry forever) and 500 for unexpected crashes (so Stripe
-    DOES retry).
+    Answers 200 when the event was understood or can be ignored, 400 for a
+    bad signature, and 5xx when Cashfree could not be reached so that
+    Cashfree retries the delivery later.
     """
 
     permission_classes = [AllowAny]
     authentication_classes: list = []
 
     def post(self, request):
-        webhook_secret = getattr(settings, "STRIPE_WEBHOOK_SECRET", "")
-
-        if not webhook_secret:
-            logger.error("STRIPE_WEBHOOK_SECRET is not configured.")
+        if not getattr(settings, "CASHFREE_SECRET_KEY", ""):
+            logger.error("CASHFREE_SECRET_KEY is not configured.")
 
             return Response(
                 {"success": False, "message": "Webhook is not configured."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        try:
-            event = stripe.Webhook.construct_event(
-                request.body,
-                request.META.get("HTTP_STRIPE_SIGNATURE", ""),
-                webhook_secret,
-            )
-        except (ValueError, SignatureVerificationError) as error:
-            logger.warning("Stripe webhook signature verification failed: %s", error)
+        raw_body = request.body
+
+        if not verify_webhook_signature(
+            raw_body,
+            request.META.get("HTTP_X_WEBHOOK_TIMESTAMP", ""),
+            request.META.get("HTTP_X_WEBHOOK_SIGNATURE", ""),
+        ):
+            logger.warning("Cashfree webhook signature verification failed.")
 
             return Response(
                 {"success": False, "message": "Invalid webhook signature."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        event_type = event["type"]
-        logger.info("Stripe webhook received: %s", event_type)
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except ValueError:
+            payload = None
 
-        if event_type in (
-            "checkout.session.completed",
-            "checkout.session.async_payment_succeeded",
-        ):
-            session_data = event["data"]["object"]
-            session_dict = (
-                session_data.to_dict() if hasattr(session_data, "to_dict") else session_data
+        if not isinstance(payload, dict):
+            return Response(
+                {"success": False, "message": "Invalid webhook body."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            is_topup = "topup_pack_id" in (session_dict.get("metadata") or {})
 
-            try:
-                if is_topup:
-                    handle_topup_checkout_completed(session_data)
-                else:
-                    handle_checkout_completed(session_data)
-            except PaymentError as error:
-                logger.error(
-                    "Failed to process %s (topup=%s, code=%s): %s",
-                    event_type,
-                    is_topup,
-                    error.code,
-                    error.message,
+        logger.info("Cashfree webhook received: %s", payload.get("type"))
+
+        try:
+            handle_webhook_event(payload)
+        except PaymentError as error:
+            if error.code == "gateway_error":
+                # Let Cashfree retry later.
+                return Response(
+                    {"success": False, "message": "Please retry."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
 
-        elif event_type in (
-            "checkout.session.expired",
-            "checkout.session.async_payment_failed",
-        ):
-            handle_checkout_failed(event["data"]["object"])
+            # A problem on our side that a retry cannot fix (e.g. amount
+            # mismatch): logged, and not retried forever.
+            logger.error("Cashfree webhook not applied (%s): %s", error.code, error.message)
 
         return Response({"success": True}, status=status.HTTP_200_OK)
 
 
 class CreateTopupCheckoutSessionView(APIView):
-    """Create a Stripe Checkout Session for purchasing a TopupPack."""
+    """Create a Cashfree order for purchasing a TopupPack."""
 
     permission_classes = [IsAuthenticated]
 
@@ -220,11 +202,10 @@ class CreateTopupCheckoutSessionView(APIView):
         frontend_url = _frontend_url()
 
         try:
-            purchase, checkout_url = create_topup_checkout_session(
+            purchase, checkout = create_topup_checkout_session(
                 user=request.user,
                 pack_id=serializer.validated_data["pack_id"],
-                success_url=f"{frontend_url}/payment/topup-success?session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{frontend_url}/payment/cancelled?type=topup",
+                return_url=f"{frontend_url}/payment/topup-success?session_id={{order_id}}",
             )
         except PaymentError as error:
             return _payment_error_response(error, "pack_id")
@@ -233,17 +214,14 @@ class CreateTopupCheckoutSessionView(APIView):
             {
                 "success": True,
                 "message": "Topup checkout session created successfully.",
-                "data": {
-                    "checkout_url": checkout_url,
-                    "stripe_checkout_session_id": purchase.stripe_checkout_session_id,
-                },
+                "data": checkout,
             },
             status=status.HTTP_201_CREATED,
         )
 
 
 class TopupPurchaseStatusView(APIView):
-    """Status of a topup purchase after returning from Stripe Checkout."""
+    """Status of a topup purchase after returning from Cashfree checkout."""
 
     permission_classes = [IsAuthenticated]
 

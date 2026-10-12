@@ -3,16 +3,18 @@ export type PaymentStatus = "CREATED" | "PAID" | "FAILED";
 export interface Payment {
   id: number;
   plan_name: string;
-  stripe_checkout_session_id: string;
+  order_id: string;
   amount: string;
   currency: string;
   status: PaymentStatus;
   created_at: string;
 }
 
+// Returned when a Cashfree order is created; passed to startCashfreeCheckout().
 export interface CreateCheckoutSessionResponse {
-  checkout_url: string;
-  stripe_checkout_session_id: string;
+  order_id: string;
+  payment_session_id: string;
+  cashfree_mode: "sandbox" | "production";
 }
 
 // ---------------------------------------------------------------------------
@@ -27,17 +29,17 @@ export interface TopupPurchase {
   pack_name: string;
   pack_kind: TopupPackKind;
   pack_quantity: number;
-  stripe_checkout_session_id: string;
+  order_id: string;
   amount: string;
   status: PaymentStatus;
   created_at: string;
 }
 
-// CreateTopupCheckoutSessionView returns the same checkout_url shape as the
-// plan checkout - both wrap stripe.checkout.Session.create identically.
+// CreateTopupCheckoutSessionView returns the same shape as the plan checkout.
 export interface CreateTopupCheckoutSessionResponse {
-  checkout_url: string;
-  stripe_checkout_session_id: string;
+  order_id: string;
+  payment_session_id: string;
+  cashfree_mode: "sandbox" | "production";
 }
 
 // ---------------------------------------------------------------------------

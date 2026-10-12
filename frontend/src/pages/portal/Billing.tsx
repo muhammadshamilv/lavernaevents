@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -7,6 +8,7 @@ import {
   Phone,
   Receipt,
 } from "lucide-react";
+import { CHECKOUT_LOAD_ERROR, startCashfreeCheckout } from "@/lib/cashfree";
 import { Card, FormError } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -185,11 +187,19 @@ function PlanSummary() {
 
 function TopupPackCard({ pack }: { pack: TopupPack }) {
   const checkoutMutation = useCreateTopupCheckoutSessionMutation();
+  // True while Cashfree's checkout page is opening; set back if it fails to open.
+  const [launching, setLaunching] = useState(false);
+  const [launchFailed, setLaunchFailed] = useState(false);
 
   const handleBuy = () => {
+    setLaunchFailed(false);
     checkoutMutation.mutate(pack.id, {
       onSuccess: (result) => {
-        window.location.href = result.checkout_url;
+        setLaunching(true);
+        startCashfreeCheckout(result).catch(() => {
+          setLaunching(false);
+          setLaunchFailed(true);
+        });
       },
     });
   };
@@ -212,13 +222,17 @@ function TopupPackCard({ pack }: { pack: TopupPack }) {
 
       <div className="mt-4 flex-1" />
 
-      <Button className="mt-4 w-full" isLoading={checkoutMutation.isPending} onClick={handleBuy}>
+      <Button className="mt-4 w-full" isLoading={checkoutMutation.isPending || launching} onClick={handleBuy}>
         Buy this pack
       </Button>
-      {checkoutMutation.isError && (
+      {(checkoutMutation.isError || launchFailed) && (
         <div className="mt-2">
           <FormError
-            message={getApiErrorMessage(checkoutMutation.error, "Couldn't start checkout.")}
+            message={
+              launchFailed
+                ? CHECKOUT_LOAD_ERROR
+                : getApiErrorMessage(checkoutMutation.error, "Couldn't start checkout.")
+            }
           />
         </div>
       )}

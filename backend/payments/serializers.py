@@ -18,12 +18,19 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    # Stored in the legacy column "stripe_checkout_session_id"; it now holds
+    # the Cashfree ORDER id.
+    order_id = serializers.CharField(
+        source="stripe_checkout_session_id",
+        read_only=True,
+    )
+
     class Meta:
         model = Payment
         fields = (
             "id",
             "plan_name",
-            "stripe_checkout_session_id",
+            "order_id",
             "amount",
             "currency",
             "status",
@@ -60,6 +67,11 @@ class TopupPurchaseSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    order_id = serializers.CharField(
+        source="stripe_checkout_session_id",
+        read_only=True,
+    )
+
     class Meta:
         model = TopupPurchase
         fields = (
@@ -67,7 +79,7 @@ class TopupPurchaseSerializer(serializers.ModelSerializer):
             "pack_name",
             "pack_kind",
             "pack_quantity",
-            "stripe_checkout_session_id",
+            "order_id",
             "amount",
             "status",
             "created_at",
