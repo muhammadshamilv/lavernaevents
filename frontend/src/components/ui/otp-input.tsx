@@ -1,118 +1,119 @@
-import * as React from "react";
+import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 
 interface OtpInputProps {
-  length?: number;
   value: string;
   onChange: (value: string) => void;
-  disabled?: boolean;
   hasError?: boolean;
   autoFocus?: boolean;
+  disabled?: boolean;
+  length?: number;
+  label?: string;
 }
 
-function OtpInput({
-  length = 6,
+// One box per digit. Typing moves on by itself, Backspace steps back, the
+// arrow keys move around, and pasting a whole code (or taking it from an SMS
+// suggestion on a phone) fills every box at once.
+export function OtpInput({
   value,
   onChange,
-  disabled,
   hasError,
   autoFocus,
+  disabled,
+  length = 6,
+  label = "Verification code",
 }: OtpInputProps) {
-  const inputsRef = React.useRef<Array<HTMLInputElement | null>>([]);
+  const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const digits = Array.from({ length }, (_, index) => value[index] ?? "");
 
-  const digits = React.useMemo(() => {
-    const arr = value.split("").slice(0, length);
-    while (arr.length < length) arr.push("");
-    return arr;
-  }, [value, length]);
+  useEffect(() => {
+    if (autoFocus) refs.current[0]?.focus();
+  }, [autoFocus]);
 
-  const focusBox = (index: number) => {
-    inputsRef.current[Math.max(0, Math.min(index, length - 1))]?.focus();
+  const focusAt = (index: number) => {
+    const target = refs.current[Math.max(0, Math.min(length - 1, index))];
+    target?.focus();
+    target?.select();
   };
 
-  const setDigit = (index: number, digit: string) => {
-    const next = [...digits];
-    next[index] = digit;
-    onChange(next.join(""));
-  };
+  const commit = (next: string[]) => onChange(next.join("").slice(0, length));
 
   const handleChange = (index: number, raw: string) => {
-    const clean = raw.replace(/\D/g, "");
+    const typed = raw.replace(/\D/g, "");
+    if (!typed) return;
 
-    // 3+ digits at once = the phone's SMS auto-fill (or a paste) of the
-    // whole code into one box.
-    if (clean.length > 2) {
-      const all = clean.slice(0, length);
-      onChange(all);
-      focusBox(all.length);
-      return;
-    }
-
-    // Typing over a filled box gives two characters: keep the new one.
-    const digit = clean.slice(-1);
-    setDigit(index, digit);
-
-    if (digit && index < length - 1) focusBox(index + 1);
+    // Several digits at once (SMS autofill, or a fast typist): spread them out.
+    const next = [...digits];
+    typed.split("").forEach((digit, offset) => {
+      if (index + offset < length) next[index + offset] = digit;
+    });
+    commit(next);
+    focusAt(Math.min(index + typed.length, length - 1));
   };
 
-  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Backspace") {
-      if (digits[index]) {
-        setDigit(index, "");
+  const handleKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      const next = [...digits];
+      if (next[index]) {
+        next[index] = "";
+        commit(next);
       } else if (index > 0) {
-        focusBox(index - 1);
-        setDigit(index - 1, "");
+        next[index - 1] = "";
+        commit(next);
+        focusAt(index - 1);
       }
-    } else if (e.key === "ArrowLeft") {
-      focusBox(index - 1);
-    } else if (e.key === "ArrowRight") {
-      focusBox(index + 1);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      focusAt(index - 1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      focusAt(index + 1);
     }
   };
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    e.preventDefault();
-
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, length);
-
+  const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const pasted = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, length);
     if (!pasted) return;
-
+    event.preventDefault();
     onChange(pasted);
-    focusBox(pasted.length);
+    focusAt(Math.min(pasted.length, length - 1));
   };
 
-  // The boxes share the available width (flex-1, capped), so six of them
-  // always fit, even on a 320px phone inside a padded card.
   return (
-    <div className="flex justify-center gap-1.5 sm:gap-3">
-      {digits.map((digit, index) => (
-        <input
-          key={index}
-          ref={(el) => {
-            inputsRef.current[index] = el;
-          }}
-          type="text"
-          inputMode="numeric"
-          autoComplete={index === 0 ? "one-time-code" : "off"}
-          aria-label={`Digit ${index + 1} of ${length}`}
-          autoFocus={autoFocus && index === 0}
-          disabled={disabled}
-          value={digit}
-          onChange={(e) => handleChange(index, e.target.value)}
-          onKeyDown={(e) => handleKeyDown(index, e)}
-          onPaste={handlePaste}
-          onFocus={(e) => e.target.select()}
-          className={cn(
-            "h-12 min-w-0 max-w-[3.5rem] flex-1 rounded-2xl border text-center text-lg font-semibold text-[var(--brand-navy)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-pink)]/40 sm:h-14",
-            hasError
-              ? "border-rose-300 focus:ring-rose-300/40"
-              : "border-slate-200 focus:border-[var(--brand-pink)]",
-            disabled && "cursor-not-allowed opacity-50"
-          )}
-        />
-      ))}
+    <div role="group" aria-label={label} className="space-y-2.5">
+      <p className="text-sm font-medium text-[var(--brand-navy)]">{label}</p>
+      <div className="flex justify-between gap-2 sm:gap-3">
+        {digits.map((digit, index) => (
+          <input
+            key={index}
+            ref={(element) => {
+              refs.current[index] = element;
+            }}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete={index === 0 ? "one-time-code" : "off"}
+            maxLength={length}
+            value={digit}
+            disabled={disabled}
+            aria-label={`Digit ${index + 1} of ${length}`}
+            onChange={(event) => handleChange(index, event.target.value)}
+            onKeyDown={(event) => handleKeyDown(index, event)}
+            onPaste={handlePaste}
+            onFocus={(event) => event.target.select()}
+            className={cn(
+              "h-13 min-w-0 max-w-14 flex-1 rounded-2xl border bg-white text-center text-xl font-semibold text-[var(--brand-navy)] transition-all duration-150 sm:h-14",
+              "focus:outline-none focus:ring-2 focus:ring-[var(--brand-pink)]/40 disabled:cursor-not-allowed disabled:opacity-50",
+              hasError
+                ? "border-rose-300 focus:ring-rose-300/40"
+                : digit
+                  ? "border-[var(--brand-pink)]/50 bg-[var(--brand-pink)]/[0.04]"
+                  : "border-slate-300 focus:border-[var(--brand-pink)]"
+            )}
+          />
+        ))}
+      </div>
     </div>
   );
 }
-
-export { OtpInput };

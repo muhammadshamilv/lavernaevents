@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Mail, MapPin, MessageCircle, Phone } from "lucide-react";
-import logo from "@/assets/laverna-logo.png";
+import Logo from "@/components/brand/Logo";
 import { siteConfig, whatsappLink } from "@/lib/siteConfig";
 
 const LEGAL_LINKS = [
@@ -16,7 +16,6 @@ const LINK_GROUPS = [
     links: [
       { label: "Features", to: "/features" },
       { label: "Pricing", to: "/pricing" },
-      { label: "Gallery", to: "/gallery" },
       { label: "FAQ", to: "/faq" },
     ],
   },
@@ -98,14 +97,22 @@ function Footer() {
   const socialLinks = (Object.keys(SOCIAL_LABELS) as SocialKey[]).filter((key) => !!social[key]);
 
   return (
-    <footer className="bg-[var(--brand-navy)] text-white">
+    <footer className="relative bg-[var(--brand-navy)] text-white">
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-1"
+        style={{ background: "linear-gradient(90deg, var(--brand-pink) 0%, var(--brand-gold) 50%, var(--brand-green) 100%)" }}
+      />
       <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:px-8 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1.4fr] lg:px-10">
         <div className="md:col-span-2 lg:col-span-1">
           <Link to="/" className="inline-flex items-center" aria-label="LavernaEvents home">
-            <img src={logo} alt="LavernaEvents" className="h-10 w-auto object-contain brightness-0 invert" />
+            <Logo size="lg" tone="light" />
           </Link>
-          <p className="mt-4 max-w-xs text-sm leading-6 text-white/70">
-            {siteConfig.tagline} Digital invitations, RSVPs and photo sharing for every kind of celebration.
+          <p className="mt-5 text-sm font-semibold tracking-wide text-[var(--brand-pink-light)]">
+            {siteConfig.tagline}
+          </p>
+          <p className="mt-2 max-w-xs text-sm leading-6 text-white/70">
+            Digital invitations, RSVPs and photo sharing for every kind of celebration.
           </p>
 
           {socialLinks.length > 0 && (

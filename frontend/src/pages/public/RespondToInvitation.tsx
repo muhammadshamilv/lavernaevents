@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -6,7 +6,9 @@ import {
   AlertCircle,
   CalendarCheck,
   CalendarPlus,
+  CalendarClock,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Heart,
   HelpCircle,
@@ -399,9 +401,11 @@ function Reveal({
   delay?: number;
   className?: string;
 }) {
+  const reduce = useReducedMotion();
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 28 }}
+      initial={reduce ? false : { opacity: 0, y: 28 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-30px" }}
       transition={{ duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] }}
@@ -427,6 +431,22 @@ function SectionTitle({ children, theme }: { children: ReactNode; theme: Theme }
 function safeHttpUrl(value: string | null | undefined): string {
   const trimmed = (value ?? "").trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : "";
+}
+
+/** Whole days from today until the event date (0 = today, negative = past). */
+function daysUntil(dateStr: string): number | null {
+  const target = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+function countdownLabel(days: number): string | null {
+  if (days < 0 || days > 365) return null;
+  if (days === 0) return "Today is the day!";
+  if (days === 1) return "Tomorrow";
+  return `${days} days to go`;
 }
 
 function splitDate(dateStr: string) {
@@ -461,6 +481,18 @@ export default function RespondToInvitation() {
   // A guest who already answered can open the choices again to change it.
   const [changing, setChanging] = useState(false);
   const reduceMotion = useReducedMotion();
+  const rsvpRef = useRef<HTMLDivElement>(null);
+  const [rsvpVisible, setRsvpVisible] = useState(false);
+
+  // Tracks whether the "Will you join us?" card is on screen, so a small
+  // prompt can follow a guest who hasn't answered yet (phones only).
+  useEffect(() => {
+    const node = rsvpRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setRsvpVisible(entry.isIntersecting), { threshold: 0.2 });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [invitation]);
 
   const handleRespond = (value: "ACCEPTED" | "MAYBE" | "REJECTED") => {
     setSelected(value);
@@ -537,6 +569,14 @@ export default function RespondToInvitation() {
         )}`
       : "");
 
+  const countdown = invitation.is_cancelled ? null : (() => {
+    const days = daysUntil(invitation.event_date);
+    return days === null ? null : countdownLabel(days);
+  })();
+  const googleCalendarUrl = safeHttpUrl(invitation.google_calendar_url);
+  const icsCalendarUrl = safeHttpUrl(invitation.calendar_url);
+  const showStickyPrompt = responsesOpen && !alreadyResponded && !rsvpVisible && !invitation.is_cancelled;
+
   const heroText = theme.onDark ? "#FFFFFF" : "#1F2A44";
   const mutedText = theme.onDark ? "rgba(255,255,255,0.72)" : "#64748B";
 
@@ -547,7 +587,7 @@ export default function RespondToInvitation() {
     >
       <ThemeParticles theme={theme} />
 
-      <div className="relative z-10 mx-auto w-full max-w-md px-4 pb-16 pt-10 sm:pt-14">
+      <div className="relative z-10 mx-auto w-full max-w-md px-4 pb-24 pt-10 sm:max-w-lg sm:pb-16 sm:pt-14">
         {/* ---------------- Hero ---------------- */}
         <div className="text-center" style={{ color: heroText }}>
           <motion.p
@@ -599,6 +639,19 @@ export default function RespondToInvitation() {
               " you are warmly invited to"
             )}
           </motion.p>
+
+          {countdown && (
+            <motion.span
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.95 }}
+              className="mt-5 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold backdrop-blur"
+              style={{ background: `${theme.accent}22`, color: theme.onDark ? "#fff" : theme.accentDark, border: `1px solid ${theme.accent}55` }}
+            >
+              <CalendarClock className="h-3.5 w-3.5" style={{ color: theme.accent }} />
+              {countdown}
+            </motion.span>
+          )}
         </div>
 
         {invitation.is_cancelled && (
@@ -765,7 +818,11 @@ export default function RespondToInvitation() {
 
         {/* ---------------- Attendance ---------------- */}
         <Reveal className="mt-8">
-          <div className="relative overflow-hidden rounded-3xl bg-white p-6 shadow-[0_18px_40px_-22px_rgba(0,0,0,0.35)]">
+          <div
+            id="rsvp"
+            ref={rsvpRef}
+            className="relative scroll-mt-6 overflow-hidden rounded-3xl bg-white p-6 shadow-[0_18px_40px_-22px_rgba(0,0,0,0.35)]"
+          >
             <SectionTitle theme={theme}>Will you join us?</SectionTitle>
 
             <AnimatePresence mode="wait">
@@ -847,7 +904,7 @@ export default function RespondToInvitation() {
                           transition={{ duration: 0.45, delay: 0.1 + index * 0.1 }}
                           whileTap={{ scale: 0.97 }}
                           aria-pressed={changing && currentStatus === option.value}
-                          className="group flex w-full items-center gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition-all disabled:opacity-60"
+                          className="group flex w-full items-center gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60"
                           style={{
                             borderColor: changing && currentStatus === option.value ? option.color : `${option.color}40`,
                             background: `${option.color}0d`,
@@ -891,45 +948,72 @@ export default function RespondToInvitation() {
         </Reveal>
 
         {/* ---------------- Add to calendar ---------------- */}
-        <Reveal className="mt-8">
-          <div className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-22px_rgba(0,0,0,0.35)]">
-            <SectionTitle theme={theme}>Save the date</SectionTitle>
-            <p className="mt-2 text-center text-sm text-slate-500">
-              One tap adds it to your calendar, with a reminder.
-            </p>
+        {(googleCalendarUrl || icsCalendarUrl) && (
+          <Reveal className="mt-8">
+            <div className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-22px_rgba(0,0,0,0.35)]">
+              <SectionTitle theme={theme}>Save the date</SectionTitle>
+              <p className="mt-2 text-center text-sm text-slate-500">Add it to your calendar so you don't forget.</p>
 
-            <div className="mt-4 grid gap-3">
-              <a
-                href={safeHttpUrl(invitation.google_calendar_url) || undefined}
-                target="_blank"
-                rel="noreferrer"
-                className={cn(
-                  "flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-semibold text-white shadow-md transition-transform active:scale-[0.98]"
+              <div className="mt-4 grid gap-3">
+                {googleCalendarUrl && (
+                  <a
+                    href={googleCalendarUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(
+                      "flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-semibold text-white shadow-md transition-transform active:scale-[0.98]"
+                    )}
+                    style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accentDark})` }}
+                  >
+                    <CalendarPlus className="h-5 w-5" />
+                    Add to Google Calendar
+                  </a>
                 )}
-                style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accentDark})` }}
-              >
-                <CalendarPlus className="h-5 w-5" />
-                Add to Google Calendar
-              </a>
 
-              <a
-                href={safeHttpUrl(invitation.calendar_url) || undefined}
-                className="flex items-center justify-center gap-2 rounded-2xl border-2 py-3.5 text-sm font-semibold transition-colors active:scale-[0.98]"
-                style={{ borderColor: `${theme.accent}55`, color: theme.accent }}
-              >
-                <CalendarCheck className="h-5 w-5" />
-                Apple / Outlook Calendar
-              </a>
+                {icsCalendarUrl && (
+                  <a
+                    href={icsCalendarUrl}
+                    className="flex items-center justify-center gap-2 rounded-2xl border-2 py-3.5 text-sm font-semibold transition-colors active:scale-[0.98]"
+                    style={{ borderColor: `${theme.accent}55`, color: theme.accent }}
+                  >
+                    <CalendarCheck className="h-5 w-5" />
+                    Apple / Outlook Calendar
+                  </a>
+                )}
+              </div>
             </div>
-          </div>
-        </Reveal>
+          </Reveal>
+        )}
 
         <Reveal className="mt-10 text-center">
           <p className="text-xs" style={{ color: mutedText }}>
-            Sent with love via LavernaEvents
+            Sent via LavernaEvents
           </p>
         </Reveal>
       </div>
+
+      {/* Phones only: follows a guest who hasn't answered yet. */}
+      <AnimatePresence>
+        {showStickyPrompt && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", damping: 24, stiffness: 280 }}
+            className="fixed inset-x-0 bottom-0 z-20 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:hidden"
+          >
+            <button
+              type="button"
+              onClick={() => rsvpRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" })}
+              className="flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold text-white shadow-[0_12px_30px_-8px_rgba(0,0,0,0.5)] active:scale-[0.98]"
+              style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accentDark})` }}
+            >
+              Let the host know if you're coming
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

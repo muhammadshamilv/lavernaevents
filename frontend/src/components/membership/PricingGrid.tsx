@@ -38,9 +38,13 @@ function FeatureRow({ enabled, label }: { enabled: boolean; label: string }) {
   return (
     <div className="flex items-center gap-2 text-sm">
       {enabled ? (
-        <Check className="h-4 w-4 shrink-0 text-emerald-500" aria-label="Included" />
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+          <Check className="h-3 w-3" strokeWidth={3} aria-label="Included" />
+        </span>
       ) : (
-        <X className="h-4 w-4 shrink-0 text-slate-300" aria-label="Not included" />
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-300">
+          <X className="h-3 w-3" strokeWidth={3} aria-label="Not included" />
+        </span>
       )}
       <span className={enabled ? "text-slate-600" : "text-slate-400"}>{label}</span>
     </div>
@@ -49,8 +53,10 @@ function FeatureRow({ enabled, label }: { enabled: boolean; label: string }) {
 
 function QuotaRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-600">
-      <span className="shrink-0 text-slate-400">{icon}</span>
+    <div className="flex items-center gap-2.5 text-sm text-slate-600">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-pink)]/[0.08] text-[var(--brand-pink)]">
+        {icon}
+      </span>
       <span>{children}</span>
     </div>
   );
@@ -88,7 +94,7 @@ function PlanCardBody({
         </span>
       ) : (
         isHighlighted && (
-          <span className="mb-3 inline-flex w-fit items-center gap-1 rounded-full bg-[var(--brand-pink)]/10 px-3 py-1 text-xs font-semibold text-[var(--brand-pink)]">
+          <span className="mb-3 inline-flex w-fit items-center gap-1 rounded-full bg-[image:var(--gradient-brand)] px-3 py-1 text-xs font-semibold text-white shadow-md shadow-[var(--brand-pink)]/25">
             <BadgeCheck className="h-3.5 w-3.5" />
             Recommended
           </span>
@@ -96,7 +102,7 @@ function PlanCardBody({
       )}
 
       <h3 className="text-lg font-semibold text-[var(--brand-navy)]">{plan.name}</h3>
-      <p className="mt-2 text-2xl font-bold text-[var(--brand-navy)] sm:mt-3 sm:text-3xl">
+      <p className="mt-2 text-3xl font-bold tracking-tight text-[var(--brand-navy)] sm:mt-3 sm:text-4xl">
         {formatPrice(plan.price)}
         {!isFree && (
           <span className="text-sm font-medium text-slate-400 sm:text-base"> / {plan.duration_days} days</span>
@@ -126,11 +132,11 @@ function PlanCardBody({
         <FeatureRow enabled={plan.photographer_access_enabled} label="Photographer access" />
       </div>
 
-      <div className="mt-6 sm:mt-8">
+      <div className="mt-auto pt-6 sm:pt-8">
         {loggedOut ? (
           <Link
             to={`/register?plan=${plan.slug}`}
-            className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[var(--brand-pink)] px-6 text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-pink-dark)]"
+            className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[var(--brand-pink)] px-6 text-sm font-semibold text-white shadow-md shadow-[var(--brand-pink)]/25 transition-all hover:-translate-y-0.5 hover:bg-[var(--brand-pink-dark)]"
           >
             Get started
           </Link>
@@ -246,7 +252,7 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
       <div className={cn("mx-auto max-w-6xl", !hideHeader && "text-center")}>
         {!hideHeader && (
           <>
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)] sm:h-14 sm:w-14">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[image:var(--gradient-brand)] text-white shadow-lg shadow-[var(--brand-pink)]/25 sm:h-14 sm:w-14">
               <Tag className="h-5 w-5 sm:h-6 sm:w-6" />
             </span>
             <h1 className="mt-4 text-2xl font-bold text-[var(--brand-navy)] sm:mt-6 sm:text-4xl">Pricing</h1>
@@ -257,7 +263,7 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
         )}
 
         {isError && (
-          <p className="mt-8 text-center text-sm text-rose-600 sm:mt-10">
+          <p className="mt-8 rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-600 sm:mt-10">
             Couldn't load plans right now. Please refresh the page.
           </p>
         )}
@@ -309,7 +315,7 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
                 <Card
                   key={plan.slug}
                   className={cn(
-                    "w-[85vw] shrink-0 snap-center p-6 text-left sm:flex sm:h-full sm:w-auto sm:flex-col sm:p-8",
+                    "card-hover-lift w-[85vw] shrink-0 snap-center p-6 text-left sm:flex sm:h-full sm:w-auto sm:flex-col sm:p-8",
                     isCurrentPlan
                       ? "border-2 border-[var(--brand-green)] soft-shadow-lg"
                       : isHighlighted && "border-2 border-[var(--brand-pink)] soft-shadow-lg"
@@ -337,7 +343,7 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
           </p>
         )}
 
-        <div className="mt-8 flex items-center justify-center gap-2 text-sm text-slate-400 sm:mt-12">
+        <div className="mx-auto mt-8 flex w-fit items-center justify-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-slate-500 shadow-sm ring-1 ring-slate-100 sm:mt-12">
           <Camera className="h-4 w-4" />
           <Images className="h-4 w-4" />
           All plans include secure event photo storage.

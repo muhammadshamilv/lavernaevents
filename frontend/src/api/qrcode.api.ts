@@ -49,9 +49,16 @@ export async function getScannedEvent(token: string): Promise<ScannedEvent> {
   return response.data.data;
 }
 
-export async function matchSelfie(token: string, selfie: File): Promise<SelfieMatchResult> {
+/** One selfie, or up to 3 of the same guest (front and slightly to each
+ * side): the server uses whichever matches a photo best. */
+export async function matchSelfie(
+  token: string,
+  selfies: File | File[]
+): Promise<SelfieMatchResult> {
   const formData = new FormData();
-  formData.append("selfie", selfie);
+  for (const selfie of Array.isArray(selfies) ? selfies : [selfies]) {
+    formData.append("selfie", selfie);
+  }
 
   const response = await apiClient.post<ApiResponse<SelfieMatchResult>>(
     `/qr/${token}/selfie/`,

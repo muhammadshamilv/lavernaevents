@@ -2,12 +2,13 @@ import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ImageIcon, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { ImageIcon, Mail, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/portal/PortalUI";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import AdminDialog, { DialogActions } from "@/components/admin/AdminDialog";
 import { resolveMediaUrl } from "@/lib/media";
@@ -63,7 +64,7 @@ function ImagePicker({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="flex h-24 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-slate-200 text-sm text-slate-500 [@media(hover:hover)]:hover:border-[var(--brand-pink)] [@media(hover:hover)]:hover:text-[var(--brand-pink)]"
+        className="flex h-28 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 text-sm text-slate-500 transition-colors [@media(hover:hover)]:hover:border-[var(--brand-pink)] [@media(hover:hover)]:hover:bg-[var(--brand-pink)]/[0.03] [@media(hover:hover)]:hover:text-[var(--brand-pink)]"
       >
         {file ? (
           <span className="truncate px-2">{file.name}</span>
@@ -145,7 +146,12 @@ function TemplateFormDialog({ template, onClose }: { template: AdminInvitationTe
   };
 
   return (
-    <AdminDialog title={isEditing ? "Edit template" : "Add template"} onClose={onClose}>
+    <AdminDialog
+      title={isEditing ? "Edit template" : "Add template"}
+      description="Platform templates are available to every organizer."
+      icon={isEditing ? Pencil : Plus}
+      onClose={onClose}
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="mt-3 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="name">Template name</Label>
@@ -166,8 +172,8 @@ function TemplateFormDialog({ template, onClose }: { template: AdminInvitationTe
         <ImagePicker label="Preview image" file={previewFile} currentUrl={template?.preview_image} error={fileErrors.preview} onPick={(f) => pick("preview", f)} />
         <ImagePicker label="Background image" file={backgroundFile} currentUrl={template?.background_image} error={fileErrors.background} onPick={(f) => pick("background", f)} />
 
-        <label className="flex items-center gap-2 text-sm text-[var(--brand-navy)]">
-          <input type="checkbox" className="h-4 w-4 rounded" {...register("is_active")} />
+        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 p-3.5 text-sm text-[var(--brand-navy)] transition-colors hover:border-[var(--brand-pink)]/40">
+          <input type="checkbox" className="h-4 w-4 rounded accent-[var(--brand-pink)]" {...register("is_active")} />
           Active (available to organizers)
         </label>
 
@@ -210,21 +216,22 @@ export default function InvitationTemplates() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--brand-navy)]">Invitation Templates</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Platform templates every organizer can choose from. Organizers' own custom designs are not listed here.
-          </p>
-        </div>
-        <Button onClick={() => setFormTemplate("new")}>
-          <Plus className="h-4 w-4" />
-          Add template
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Admin"
+        icon={Mail}
+        title="Invitation Templates"
+        description="Platform templates every organizer can choose from. Organizers' own custom designs are not listed here."
+        actions={
+          <Button onClick={() => setFormTemplate("new")}>
+            <Plus className="h-4 w-4" />
+            Add template
+          </Button>
+        }
+      />
 
       {isError ? (
-        <Card className="p-8 text-center text-sm text-slate-500">
+        <Card className="bg-rose-50/60 p-8 text-center text-sm text-rose-600 ring-1 ring-rose-100">
           We couldn't load templates right now. Please refresh the page.
         </Card>
       ) : isLoading ? (
@@ -236,8 +243,8 @@ export default function InvitationTemplates() {
       ) : templates && templates.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {templates.map((template) => (
-            <Card key={template.id} className="overflow-hidden">
-              <div className="flex h-36 items-center justify-center bg-slate-100">
+            <Card key={template.id} className="card-hover-lift overflow-hidden">
+              <div className="flex h-40 items-center justify-center bg-slate-100">
                 {template.preview_image ? (
                   <img src={resolveMediaUrl(template.preview_image) ?? undefined} alt={template.name} className="h-full w-full object-cover" />
                 ) : (
@@ -270,7 +277,12 @@ export default function InvitationTemplates() {
           ))}
         </div>
       ) : (
-        <Card className="p-8 text-center text-sm text-slate-500">No templates yet. Click "Add template" to create one.</Card>
+        <Card className="p-10 text-center text-sm text-slate-500">
+          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+            <Mail className="h-7 w-7" />
+          </span>
+          No templates yet. Click "Add template" to create one.
+        </Card>
       )}
 
       {formTemplate && <TemplateFormDialog template={formTemplate === "new" ? null : formTemplate} onClose={() => setFormTemplate(null)} />}

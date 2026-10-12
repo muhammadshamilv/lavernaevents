@@ -2,12 +2,13 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/portal/PortalUI";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import AdminDialog, { DialogActions } from "@/components/admin/AdminDialog";
 import { getApiErrorMessage, getApiFieldErrors } from "@/lib/apiError";
@@ -129,7 +130,12 @@ function PlanFormDialog({ plan, onClose }: { plan: AdminMembershipPlan | null; o
   };
 
   return (
-    <AdminDialog title={isEditing ? "Edit plan" : "Add plan"} onClose={onClose}>
+    <AdminDialog
+      title={isEditing ? "Edit plan" : "Add plan"}
+      description="Plans appear on the pricing page when they are active."
+      icon={isEditing ? Pencil : Plus}
+      onClose={onClose}
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="mt-3 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="name">Plan name</Label>
@@ -176,8 +182,8 @@ function PlanFormDialog({ plan, onClose }: { plan: AdminMembershipPlan | null; o
           <FormError message={errors.storage_limit_mb?.message} />
         </div>
 
-        <div className="space-y-3 rounded-2xl bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Invitation quotas (leave empty for unlimited)</p>
+        <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Invitation quotas (leave empty for unlimited)</p>
           <div className="space-y-1.5">
             <Label htmlFor="total_invitations">Total invitations (shared across WhatsApp/Email/SMS)</Label>
             <Input id="total_invitations" type="number" inputMode="numeric" min={0} placeholder="Unlimited" hasError={!!errors.total_invitations} {...register("total_invitations")} />
@@ -195,23 +201,23 @@ function PlanFormDialog({ plan, onClose }: { plan: AdminMembershipPlan | null; o
           </div>
         </div>
 
-        <div className="space-y-2 rounded-2xl bg-slate-50 p-3">
-          <label className="flex items-center gap-2 text-sm text-[var(--brand-navy)]">
-            <input type="checkbox" className="h-4 w-4 rounded" {...register("gallery_enabled")} />
+        <div className="space-y-1 rounded-2xl border border-slate-100 bg-slate-50/70 p-2">
+          <label className="flex min-h-10 cursor-pointer items-center gap-3 rounded-xl px-2 text-sm text-[var(--brand-navy)] transition-colors hover:bg-white">
+            <input type="checkbox" className="h-4 w-4 rounded accent-[var(--brand-pink)]" {...register("gallery_enabled")} />
             Gallery enabled
           </label>
-          <label className="flex items-center gap-2 text-sm text-[var(--brand-navy)]">
-            <input type="checkbox" className="h-4 w-4 rounded" {...register("qr_code_enabled")} />
+          <label className="flex min-h-10 cursor-pointer items-center gap-3 rounded-xl px-2 text-sm text-[var(--brand-navy)] transition-colors hover:bg-white">
+            <input type="checkbox" className="h-4 w-4 rounded accent-[var(--brand-pink)]" {...register("qr_code_enabled")} />
             QR code and face search enabled
           </label>
-          <label className="flex items-center gap-2 text-sm text-[var(--brand-navy)]">
-            <input type="checkbox" className="h-4 w-4 rounded" {...register("photographer_access_enabled")} />
+          <label className="flex min-h-10 cursor-pointer items-center gap-3 rounded-xl px-2 text-sm text-[var(--brand-navy)] transition-colors hover:bg-white">
+            <input type="checkbox" className="h-4 w-4 rounded accent-[var(--brand-pink)]" {...register("photographer_access_enabled")} />
             Photographer access enabled
           </label>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-[var(--brand-navy)]">
-          <input type="checkbox" className="h-4 w-4 rounded" {...register("is_active")} />
+        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 p-3.5 text-sm text-[var(--brand-navy)] transition-colors hover:border-[var(--brand-pink)]/40">
+          <input type="checkbox" className="h-4 w-4 rounded accent-[var(--brand-pink)]" {...register("is_active")} />
           Active (visible on pricing page)
         </label>
 
@@ -229,7 +235,10 @@ function PlanFormDialog({ plan, onClose }: { plan: AdminMembershipPlan | null; o
 }
 
 function Pill({ children }: { children: string }) {
-  return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{children}</span>;
+  return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+      <Check className="h-3 w-3" />
+      {children}
+    </span>;
 }
 
 export default function MembershipPlans() {
@@ -255,19 +264,24 @@ export default function MembershipPlans() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--brand-navy)]">Membership Plans</h1>
-          <p className="mt-1 text-sm text-slate-500">Create and manage subscription plans.</p>
-        </div>
-        <Button onClick={() => setFormPlan("new")}>
-          <Plus className="h-4 w-4" />
-          Add plan
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Admin"
+        icon={Wallet}
+        title="Membership Plans"
+        description="Create and manage subscription plans."
+        actions={
+          <Button onClick={() => setFormPlan("new")}>
+            <Plus className="h-4 w-4" />
+            Add plan
+          </Button>
+        }
+      />
 
       {isError ? (
-        <Card className="p-8 text-center text-sm text-slate-500">We couldn't load plans right now. Please refresh the page.</Card>
+        <Card className="bg-rose-50/60 p-8 text-center text-sm text-rose-600 ring-1 ring-rose-100">
+          We couldn't load plans right now. Please refresh the page.
+        </Card>
       ) : isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -277,7 +291,7 @@ export default function MembershipPlans() {
       ) : plans && plans.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {plans.map((plan) => (
-            <Card key={plan.id} className="flex flex-col p-5">
+            <Card key={plan.id} className="card-hover-lift flex flex-col p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="truncate font-bold text-[var(--brand-navy)]">{plan.name}</h3>
@@ -290,14 +304,14 @@ export default function MembershipPlans() {
                 )}
               </div>
 
-              <p className="mt-3 text-2xl font-bold text-[var(--brand-navy)]">
+              <p className="mt-3 text-3xl font-bold tracking-tight text-[var(--brand-navy)]">
                 ₹{plan.price}
                 <span className="text-sm font-medium text-slate-400"> / {plan.duration_days} days</span>
               </p>
 
               {plan.description && <p className="mt-1 line-clamp-2 text-sm text-slate-500">{plan.description}</p>}
 
-              <div className="mt-3 flex-1 space-y-1 text-sm text-slate-500">
+              <div className="mt-3 flex-1 space-y-1.5 rounded-2xl bg-slate-50/70 p-3 text-sm text-slate-500">
                 <p>Events: {plan.event_limit}</p>
                 <p>Guests: {plan.guest_limit}</p>
                 <p>Storage: {plan.storage_limit_mb} MB</p>
@@ -325,7 +339,12 @@ export default function MembershipPlans() {
           ))}
         </div>
       ) : (
-        <Card className="p-8 text-center text-sm text-slate-500">No plans yet. Click "Add plan" to create one.</Card>
+        <Card className="p-10 text-center text-sm text-slate-500">
+          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+            <Wallet className="h-7 w-7" />
+          </span>
+          No plans yet. Click "Add plan" to create one.
+        </Card>
       )}
 
       {formPlan && <PlanFormDialog plan={formPlan === "new" ? null : formPlan} onClose={() => setFormPlan(null)} />}

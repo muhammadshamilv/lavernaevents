@@ -44,14 +44,19 @@ export default function PendingWhatsAppReminders() {
   }
 
   return (
-    <div className="premium-card border border-emerald-100 bg-emerald-50/60 p-4 lg:p-5">
-      <div className="flex items-center gap-2">
-        <MessageCircle className="h-4 w-4 text-emerald-600" />
-        <h3 className="text-sm font-semibold text-[var(--brand-navy)]">
-          WhatsApp reminders waiting to send ({pending.length})
+    <div className="premium-card border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white p-4 lg:p-5">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+          <MessageCircle className="h-[18px] w-[18px]" />
+        </span>
+        <h3 className="min-w-0 flex-1 text-sm font-semibold text-[var(--brand-navy)]">
+          WhatsApp reminders waiting to send
         </h3>
+        <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white">
+          {pending.length}
+        </span>
       </div>
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-slate-500">
         WhatsApp reminders can't be sent automatically - tap Send and WhatsApp opens with the
         reminder ready.
       </p>
@@ -60,7 +65,7 @@ export default function PendingWhatsAppReminders() {
         {pending.map((reminder) => (
           <div
             key={reminder.id}
-            className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm"
+            className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3.5 py-2.5 text-sm shadow-sm ring-1 ring-emerald-100"
           >
             <div className="min-w-0">
               <p className="truncate font-medium text-[var(--brand-navy)]">{reminder.guest_name}</p>

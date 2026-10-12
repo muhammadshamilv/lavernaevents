@@ -3,8 +3,6 @@ import { Link } from "react-router-dom";
 import {
   AlarmClock,
   AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
   Clock,
   Mail,
   MailCheck,
@@ -14,11 +12,13 @@ import {
   Send,
   SlidersHorizontal,
   Trash2,
+  Users,
   UserPlus,
   XCircle,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select } from "@/components/ui/select";
+import { PageHeader, PageNav, fieldClass } from "@/components/portal/PortalUI";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import GuestForm from "./GuestForm";
@@ -75,7 +75,7 @@ function ChannelStatusTag({ guest, channel }: { guest: Guest; channel: Notificat
   // No channel chosen yet: show the guest's overall status, as before.
   if (!channel) {
     return (
-      <div className="flex items-center gap-1 text-xs text-slate-400">
+      <div className="flex items-center gap-1 rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-500">
         {guest.invitation_status === "SENT" && (
           <MailCheck className="h-3.5 w-3.5 text-[var(--brand-green)]" />
         )}
@@ -88,7 +88,7 @@ function ChannelStatusTag({ guest, channel }: { guest: Guest; channel: Notificat
 
   if (status === "SENT") {
     return (
-      <div className="flex items-center gap-1 text-xs text-slate-500">
+      <div className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
         <MailCheck className="h-3.5 w-3.5 text-[var(--brand-green)]" />
         Sent
       </div>
@@ -97,7 +97,7 @@ function ChannelStatusTag({ guest, channel }: { guest: Guest; channel: Notificat
 
   if (status === "CALLING") {
     return (
-      <div className="flex items-center gap-1 text-xs text-amber-600">
+      <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
         <Clock className="h-3.5 w-3.5" />
         Calling...
       </div>
@@ -106,7 +106,7 @@ function ChannelStatusTag({ guest, channel }: { guest: Guest; channel: Notificat
 
   if (status === "FAILED") {
     return (
-      <div className="flex items-center gap-1 text-xs text-rose-600">
+      <div className="flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-600">
         <XCircle className="h-3.5 w-3.5" />
         Failed
       </div>
@@ -114,7 +114,7 @@ function ChannelStatusTag({ guest, channel }: { guest: Guest; channel: Notificat
   }
 
   return (
-    <div className="flex items-center gap-1 text-xs text-slate-400">
+    <div className="flex items-center gap-1 rounded-full bg-slate-50 px-2 py-1 text-xs text-slate-400">
       <Send className="h-3.5 w-3.5" />
       Not sent
     </div>
@@ -362,21 +362,22 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
   return (
     <div className="mobile-safe-bottom px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-6xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-[var(--brand-navy)] lg:text-2xl">Guests</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {pagination
-                ? `${pagination.count} guest${pagination.count === 1 ? "" : "s"}`
-                : "Manage your guest list."}
-            </p>
-          </div>
-          <Button size="sm" onClick={openCreate} className="lg:h-11 lg:px-6 lg:text-sm">
-            <UserPlus className="h-4 w-4" />
-            <span className="hidden sm:inline">Add guest</span>
-            <span className="sm:hidden">Add</span>
-          </Button>
-        </div>
+        <PageHeader
+          title="Guests"
+          icon={Users}
+          description={
+            pagination
+              ? `${pagination.count} guest${pagination.count === 1 ? "" : "s"}`
+              : "Manage your guest list."
+          }
+          actions={
+            <Button size="sm" onClick={openCreate} className="lg:h-11 lg:px-6 lg:text-sm">
+              <UserPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">Add guest</span>
+              <span className="sm:hidden">Add</span>
+            </Button>
+          }
+        />
 
         <div className="mt-4 space-y-3 lg:mt-6">
           <PendingWhatsAppReminders />
@@ -390,7 +391,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
 
         {/* Sending needs a filled template for THIS event */}
         {channel && !activeLoading && !readyToSend && (
-          <div className="mt-3 flex items-start gap-2.5 rounded-2xl bg-amber-50 p-4">
+          <div className="mt-3 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-100">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <div>
               <p className="text-sm font-medium text-amber-900">
@@ -405,7 +406,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
               </p>
               <Link
                 to="/portal/templates"
-                className="mt-2 inline-block text-sm font-semibold text-[var(--brand-pink)]"
+                className="mt-2 inline-flex min-h-10 items-center text-sm font-semibold text-[var(--brand-pink)] underline-offset-4 hover:underline"
               >
                 Go to Templates
               </Link>
@@ -431,7 +432,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by name or mobile number"
-              className="h-11 w-full rounded-full border border-slate-200 bg-white pl-11 pr-4 text-sm text-[var(--brand-navy)] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand-pink)]/40 focus:border-[var(--brand-pink)]"
+              className={`${fieldClass} h-11 rounded-full pl-11 pr-4 shadow-sm`}
             />
           </div>
 
@@ -466,10 +467,10 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
             type="button"
             onClick={() => setFiltersOpen((prev) => !prev)}
             className={cn(
-              "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors lg:hidden",
+              "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors lg:hidden",
               filtersOpen || activeFilterCount > 0
                 ? "border-[var(--brand-pink)] bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]"
-                : "border-slate-200 text-slate-500"
+                : "border-slate-200 bg-white text-slate-500"
             )}
             aria-label="Filters"
           >
@@ -483,7 +484,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
         </div>
 
         {filtersOpen && (
-          <div className="mt-3 space-y-2 rounded-2xl border border-slate-100 bg-white p-3 lg:hidden">
+          <div className="mt-3 space-y-2 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm lg:hidden">
             <Select
               aria-label="Filter by response"
               value={responseFilter}
@@ -511,7 +512,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
 
         {/* Bulk channels: select-all row */}
         {isBulkChannel && readyToSend && guests.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-slate-100 bg-white p-3">
+          <div className="mt-4 rounded-2xl border border-[var(--brand-pink)]/15 bg-[var(--brand-pink)]/[0.03] p-3.5">
             <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-[var(--brand-navy)]">
               <input
                 type="checkbox"
@@ -537,7 +538,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                   <button
                     type="button"
                     onClick={() => setSelectAllMatching(true)}
-                    className="font-semibold text-[var(--brand-pink)]"
+                    className="font-semibold text-[var(--brand-pink)] underline-offset-2 hover:underline"
                   >
                     Select all {matchingCount} guests{scopeLabel}
                   </button>
@@ -560,7 +561,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
         )}
 
         {isError && (
-          <p className="mt-8 text-center text-sm text-rose-600 lg:mt-10">
+          <p className="mt-8 rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-600 lg:mt-10">
             Couldn't load guests right now. Please refresh the page.
           </p>
         )}
@@ -579,9 +580,9 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
         )}
 
         {!isLoading && !isError && guests.length === 0 && (
-          <div className="mt-10 flex flex-col items-center px-6 py-16 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
-              <UserPlus className="h-6 w-6" />
+          <div className="mt-8 flex flex-col items-center rounded-3xl border border-dashed border-slate-200 bg-white/60 px-6 py-14 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+              <UserPlus className="h-7 w-7" />
             </span>
             {hasFilters ? (
               <>
@@ -619,8 +620,8 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                 <div
                   key={guest.id}
                   className={cn(
-                    "premium-card card-hover-lift flex flex-col p-4 lg:p-5",
-                    isSelected && "ring-2 ring-[var(--brand-pink)]/60"
+                    "premium-card card-hover-lift flex flex-col p-4 transition-shadow lg:p-5",
+                    isSelected && "ring-2 ring-[var(--brand-pink)]/60 shadow-lg shadow-[var(--brand-pink)]/10"
                   )}
                 >
                   <div className="flex items-start justify-between">
@@ -632,16 +633,16 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                           onChange={() => toggleGuest(guest.id)}
                           disabled={!selectable}
                           aria-label={`Select ${guest.name}`}
-                          className="h-5 w-5 accent-[var(--brand-pink)] disabled:opacity-40"
+                          className="h-5 w-5 cursor-pointer accent-[var(--brand-pink)] disabled:cursor-not-allowed disabled:opacity-40"
                         />
                       )}
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-sm font-semibold text-[var(--brand-pink)] lg:h-12 lg:w-12">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[image:var(--gradient-brand)] text-sm font-semibold text-white shadow-md shadow-[var(--brand-pink)]/20 lg:h-12 lg:w-12">
                         {getInitials(guest.name)}
                       </div>
                     </div>
                     <span
                       className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-semibold",
+                        "shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold",
                         RESPONSE_STATUS_BADGE_CLASS[guest.response_status]
                       )}
                     >
@@ -654,7 +655,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                   </p>
 
                   {guest.category_name && (
-                    <span className="mt-1 inline-block w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                    <span className="mt-1 inline-block w-fit max-w-full truncate rounded-full bg-[var(--brand-navy)]/[0.06] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--brand-navy)]/70">
                       {guest.category_name}
                     </span>
                   )}
@@ -671,11 +672,11 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                       </div>
                     )}
                     {emailMissing && (
-                      <p className="text-xs text-rose-500">No email on file - can't send by email.</p>
+                      <p className="text-xs font-medium text-rose-500">No email on file - can't send by email.</p>
                     )}
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between">
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                       Party of {guest.family_member_count}
                     </span>
@@ -724,7 +725,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                     <button
                       type="button"
                       onClick={() => openEdit(guest)}
-                      className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-[var(--brand-navy)]"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-[var(--brand-navy)]"
                       aria-label="Edit guest"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -732,7 +733,7 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(guest)}
-                      className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Remove guest"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -745,37 +746,20 @@ export default function GuestCardList({ eventId }: GuestCardListProps) {
         )}
 
         {pagination && pagination.total_pages > 1 && (
-          <div className="mt-4 flex items-center justify-between text-sm text-slate-500 lg:mt-6">
-            <span>
-              Page {pagination.current_page} of {pagination.total_pages}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                disabled={!pagination.previous}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((prev) => prev + 1)}
-                disabled={!pagination.next}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Next page"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+          <PageNav
+            className="mt-5 lg:mt-6"
+            label={`Page ${pagination.current_page} of ${pagination.total_pages}`}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => prev + 1)}
+            canPrev={!!pagination.previous}
+            canNext={!!pagination.next}
+          />
         )}
 
         {/* Bulk send bar: appears as soon as something is ticked */}
         {isBulkChannel && channel && selectionCount > 0 && (
           <div className="sticky bottom-[calc(5.5rem+var(--safe-area-inset-bottom))] z-30 mt-6 lg:bottom-4">
-            <div className="flex items-center justify-between gap-3 rounded-full bg-[var(--brand-navy)] px-5 py-3 text-white shadow-lg">
+            <div className="flex items-center justify-between gap-3 rounded-full bg-[var(--brand-navy)] py-2.5 pl-5 pr-2.5 text-white shadow-2xl shadow-[var(--brand-navy)]/30 ring-1 ring-white/10">
               <span className="text-sm font-medium">
                 {selectionCount} selected
                 <button

@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Check, Clock, ImageIcon, LayoutTemplate, Palette, Pencil, Plus, Search, Sparkles, Trash2, Type, X } from "lucide-react";
+import { Check, ChevronRight, Clock, ImageIcon, LayoutTemplate, Palette, Pencil, Plus, Search, Sparkles, Trash2, Type, X } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Modal, ModalActions } from "@/components/ui/modal";
+import { PageHeader, SectionLabel } from "@/components/portal/PortalUI";
 import {
   useActiveFilledTemplate,
   useActiveTemplatePreview,
@@ -90,32 +92,39 @@ export default function InvitationTemplates() {
   return (
     <div className="mobile-safe-bottom px-4 py-6 sm:px-6 sm:py-10 lg:px-10">
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--brand-pink)]">
-              Invitations
-            </p>
-            <h1 className="mt-2 text-xl font-bold text-[var(--brand-navy)] sm:text-2xl lg:text-3xl">
-              Templates
-            </h1>
-            <p className="mt-2 text-sm text-slate-500">
+        <PageHeader
+          eyebrow="Invitations"
+          icon={LayoutTemplate}
+          title="Templates"
+          className="items-start [&_p]:max-w-2xl"
+          description={
+            <>
               Select a template and fill it in once for an event. Then go to the Guests page,
               choose how to send (WhatsApp, Email, SMS or Voice Call) and send.
-            </p>
-            {usage && (
-              <p className={cn("mt-2 text-xs", limitReached ? "text-amber-700" : "text-slate-400")}>
-                {usage.template_limit === null
-                  ? `${usage.template_count} template${usage.template_count === 1 ? "" : "s"} in your library`
-                  : `${usage.template_count} of ${usage.template_limit} template slots used`}
-                {limitReached && " · remove one of your uploads or upgrade to add more"}
-              </p>
-            )}
-          </div>
-          <Button className="w-full sm:w-auto" onClick={() => setUploadOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Upload template
-          </Button>
-        </div>
+              {usage && (
+                <span
+                  className={cn(
+                    "mt-2.5 inline-flex rounded-full px-3 py-1 text-xs font-medium",
+                    limitReached
+                      ? "bg-amber-50 text-amber-700 ring-1 ring-amber-100"
+                      : "bg-slate-100 text-slate-500"
+                  )}
+                >
+                  {usage.template_limit === null
+                    ? `${usage.template_count} template${usage.template_count === 1 ? "" : "s"} in your library`
+                    : `${usage.template_count} of ${usage.template_limit} template slots used`}
+                  {limitReached && " · remove one of your uploads or upgrade to add more"}
+                </span>
+              )}
+            </>
+          }
+          actions={
+            <Button className="w-full sm:w-auto" onClick={() => setUploadOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Upload template
+            </Button>
+          }
+        />
 
         {/* The selected template, shown separately with the organizer's
             text drawn on it exactly as guests will receive it. */}
@@ -129,7 +138,7 @@ export default function InvitationTemplates() {
         )}
 
         {isError && (
-          <p className="mt-10 text-center text-sm text-rose-600">
+          <p className="mt-10 rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-600">
             Couldn't load templates right now. Please refresh the page.
           </p>
         )}
@@ -203,44 +212,49 @@ export default function InvitationTemplates() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: "-40px" }}
                   transition={{ duration: 0.35 }}
+                
+                  className="h-full"
                 >
                   <Card
                     className={cn(
-                      "card-hover-lift overflow-hidden",
+                      "card-hover-lift group flex h-full flex-col overflow-hidden",
                       isActive && "ring-2 ring-[var(--brand-pink)]"
                     )}
                   >
-                    <div className="relative flex aspect-[3/4] w-full items-center justify-center bg-slate-100">
+                    <div className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden bg-slate-100">
                       {previewUrl ? (
                         <img
                           src={previewUrl}
                           alt={template.name}
                           loading="lazy"
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover transition-transform duration-500 [@media(hover:hover)]:group-hover:scale-105"
                         />
                       ) : (
                         <ImageIcon className="h-10 w-10 text-slate-300" />
                       )}
                       {template.is_custom && (
-                        <span className="absolute left-2.5 top-2.5 rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-[var(--brand-navy)] shadow-sm">
+                        <span className="absolute left-2.5 top-2.5 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-[var(--brand-navy)] shadow-sm backdrop-blur">
                           Your upload
                         </span>
                       )}
                       {isActive && (
-                        <span className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-full bg-[var(--brand-pink)] px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm">
+                        <span className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-full bg-[var(--brand-pink)] px-2.5 py-1 text-[11px] font-semibold text-white shadow-md shadow-[var(--brand-pink)]/30">
                           <Check className="h-3 w-3" />
                           Active
                         </span>
                       )}
                     </div>
-                    <div className="p-4 sm:p-5">
+                    <div className="flex flex-1 flex-col p-4 sm:p-5">
                       <p className="font-semibold text-[var(--brand-navy)]">{template.name}</p>
                       {template.description && (
                         <p className="mt-1.5 text-sm text-slate-500">{template.description}</p>
                       )}
                       {!template.in_library && (
-                        <p className="mt-1 text-xs text-slate-400">New · uses a slot</p>
+                        <p className="mt-2 inline-flex w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                          New · uses a slot
+                        </p>
                       )}
+                      <div className="flex-1" />
                       <Button
                         variant={isActive ? "outline" : "primary"}
                         className="mt-3.5 w-full"
@@ -255,7 +269,7 @@ export default function InvitationTemplates() {
                             setRemoveError(null);
                             setRemovingTemplate(template);
                           }}
-                          className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                          className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Remove my upload
@@ -317,44 +331,40 @@ function RemoveTemplateDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  useDialogBehaviour(onClose);
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:px-4">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="remove-template-title"
-        className="premium-card relative w-full max-w-md rounded-b-none p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-b-[inherit] sm:p-6"
-      >
-        <h2 id="remove-template-title" className="text-lg font-bold text-[var(--brand-navy)]">
-          Remove "{template.name}"?
-        </h2>
-        <p className="mt-2 text-sm text-slate-500">
+    <Modal
+      open
+      onClose={onClose}
+      title={`Remove "${template.name}"?`}
+      description={
+        <>
           This frees up a template slot.
           {isActive && " It is your active template, so it will be deselected too."} Invitations
           you already sent are not affected.
-        </p>
-
-        {errorMessage && <FormError message={errorMessage} />}
-
-        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row">
-          <Button variant="outline" className="flex-1" onClick={onClose} disabled={isRemoving}>
+        </>
+      }
+      icon={Trash2}
+      tone="danger"
+      size="sm"
+      busy={isRemoving}
+      footer={
+        <ModalActions>
+          <Button variant="outline" onClick={onClose} disabled={isRemoving}>
             Keep it
           </Button>
           <Button
-            className="flex-1 !bg-rose-600 hover:!bg-rose-700"
+            className="!bg-rose-600 hover:!bg-rose-700"
             onClick={onConfirm}
             isLoading={isRemoving}
           >
             <Trash2 className="h-4 w-4" />
             Remove
           </Button>
-        </div>
-      </div>
-    </div>
+        </ModalActions>
+      }
+    >
+      {errorMessage && <FormError message={errorMessage} />}
+    </Modal>
   );
 }
 
@@ -380,7 +390,7 @@ function PreviewCard({
       <img
         src={preview.image}
         alt="Your filled invitation"
-        className="w-full rounded-2xl object-contain shadow-sm"
+        className="w-full rounded-2xl object-contain shadow-md ring-1 ring-slate-100"
       />
     );
   }
@@ -445,12 +455,10 @@ function ActiveTemplatePanel({
       transition={{ duration: 0.3 }}
       className="mt-6"
     >
-      <Card className="overflow-hidden border-2 border-[var(--brand-pink)]/30 bg-[var(--brand-pink)]/[0.03]">
+      <Card className="overflow-hidden border-2 border-[var(--brand-pink)]/30 bg-[image:var(--gradient-brand-soft)]">
         <div className="grid gap-6 p-5 sm:grid-cols-[minmax(0,280px)_1fr] sm:p-6">
           <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-              Your invitation, as guests will see it
-            </p>
+            <SectionLabel className="mb-2">Your invitation, as guests will see it</SectionLabel>
             <PreviewCard
               preview={preview}
               isLoading={previewLoading}
@@ -459,11 +467,11 @@ function ActiveTemplatePanel({
           </div>
 
           <div className="flex flex-col">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--brand-pink)]">
+            <p className="flex w-fit items-center gap-1.5 rounded-full bg-[var(--brand-pink)] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-md shadow-[var(--brand-pink)]/25">
               <Check className="h-3.5 w-3.5" />
               Currently active
             </p>
-            <p className="mt-1 text-lg font-semibold text-[var(--brand-navy)]">
+            <p className="mt-3 text-xl font-bold tracking-tight text-[var(--brand-navy)]">
               {active.template_name}
             </p>
             <p className="text-sm text-slate-500">
@@ -471,9 +479,9 @@ function ActiveTemplatePanel({
             </p>
 
             {detailRows.length > 0 && (
-              <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              <dl className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                 {detailRows.map(([label, value]) => (
-                  <div key={label}>
+                  <div key={label} className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-white">
                     <dt className="text-xs text-slate-400">{label}</dt>
                     <dd className="font-medium text-[var(--brand-navy)]">{value}</dd>
                   </div>
@@ -481,7 +489,7 @@ function ActiveTemplatePanel({
               </dl>
             )}
 
-            <p className="mt-4 text-sm text-slate-500">
+            <p className="mt-4 rounded-xl bg-white/60 px-3 py-2 text-sm text-slate-500">
               Next: open the Guests page, choose WhatsApp, Email, SMS or Voice Call, and send.
             </p>
 
@@ -610,8 +618,12 @@ function FillTemplateDialog({
   const confirmed = confirmedActive !== null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:px-4">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+    <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center sm:p-4">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-[var(--brand-navy-dark)]/55 backdrop-blur-[3px]"
+        onClick={onClose}
+      />
 
       <motion.div
         role="dialog"
@@ -621,30 +633,63 @@ function FillTemplateDialog({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.15 }}
         className={cn(
-          "premium-card relative max-h-[92dvh] w-full overflow-y-auto rounded-b-none p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-b-[inherit] sm:p-8",
+          "soft-shadow-lg relative max-h-[92dvh] w-full overflow-y-auto overscroll-contain rounded-t-[1.75rem] bg-white pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-h-[90dvh] sm:rounded-3xl sm:pb-8",
           !confirmed && step === "fill-fields" ? "max-w-4xl" : "max-w-lg"
         )}
       >
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--brand-navy)]">
-              {confirmed ? "Template confirmed" : `Fill in "${template.name}"`}
-            </h2>
-            {!confirmed && (
-              <p className="mt-1 text-sm text-slate-500">
-                {step === "pick-event"
-                  ? "Which event is this invitation for?"
-                  : "Review and edit the details, then confirm."}
-              </p>
-            )}
+        <div
+          aria-hidden="true"
+          className="sticky top-0 z-10 h-1 w-full"
+          style={{
+            background: confirmed
+              ? "linear-gradient(90deg, var(--brand-green), var(--brand-green-light))"
+              : "linear-gradient(90deg, var(--brand-pink), var(--brand-gold), var(--brand-green))",
+          }}
+        />
+        <div className="px-5 pt-5 sm:px-8 sm:pt-7">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3.5">
+            <span
+              className={cn(
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+                confirmed
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]"
+              )}
+            >
+              {confirmed ? <Check className="h-5 w-5" /> : <LayoutTemplate className="h-5 w-5" />}
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <h2 className="text-balance text-lg font-semibold tracking-tight text-[var(--brand-navy)] sm:text-xl">
+                {confirmed ? "Template confirmed" : `Fill in "${template.name}"`}
+              </h2>
+              {!confirmed && (
+                <p className="mt-1 text-sm text-slate-500">
+                  {step === "pick-event"
+                    ? "Which event is this invitation for?"
+                    : "Review and edit the details, then confirm."}
+                </p>
+              )}
+              {!confirmed && (
+                <div className="mt-2.5 flex items-center gap-1.5" aria-hidden="true">
+                  <span className="h-1.5 w-8 rounded-full bg-[var(--brand-pink)]" />
+                  <span
+                    className={cn(
+                      "h-1.5 w-8 rounded-full transition-colors",
+                      step === "fill-fields" ? "bg-[var(--brand-pink)]" : "bg-slate-200"
+                    )}
+                  />
+                </div>
+              )}
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="-mr-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-[var(--brand-navy)]"
             aria-label="Close"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
@@ -672,7 +717,7 @@ function FillTemplateDialog({
             )}
 
             {!eventsLoading && events.length === 0 && !debouncedSearch && (
-              <div className="rounded-2xl bg-amber-50 p-4">
+              <div className="rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-100">
                 <p className="text-sm text-amber-800">
                   You don't have any events yet. Create one first.
                 </p>
@@ -692,7 +737,7 @@ function FillTemplateDialog({
                     key={event.id}
                     type="button"
                     onClick={() => handlePickEvent(event.id)}
-                    className="flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 p-3.5 text-left hover:border-[var(--brand-pink)]"
+                    className="group flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition-all hover:border-[var(--brand-pink)] hover:shadow-md hover:shadow-[var(--brand-pink)]/10"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-medium text-[var(--brand-navy)]">{event.name}</p>
@@ -700,7 +745,10 @@ function FillTemplateDialog({
                         {event.venue_name || "No venue set"}
                       </p>
                     </div>
-                    <span className="shrink-0 text-xs text-slate-400">{event.event_date}</span>
+                    <span className="flex shrink-0 items-center gap-1.5 text-xs text-slate-400">
+                      {event.event_date}
+                      <ChevronRight className="h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--brand-pink)]" />
+                    </span>
                   </button>
                 ))}
               </div>
@@ -718,8 +766,8 @@ function FillTemplateDialog({
               <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
                 {/* ---------------- form column ---------------- */}
                 <div className="space-y-6">
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-[var(--brand-navy)]">
+                  <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                    <p className="text-sm font-semibold text-[var(--brand-navy)]">
                       Event details (auto-filled, editable)
                     </p>
                     {Object.keys(STANDARD_FIELD_LABELS)
@@ -737,8 +785,8 @@ function FillTemplateDialog({
                   </div>
 
                   {/* Time: From - To */}
-                  <div className="space-y-3 rounded-2xl border border-slate-100 p-4">
-                    <p className="flex items-center gap-2 text-sm font-medium text-[var(--brand-navy)]">
+                  <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-[var(--brand-navy)]">
                       <Clock className="h-4 w-4 text-[var(--brand-pink)]" />
                       Event time
                     </p>
@@ -771,7 +819,7 @@ function FillTemplateDialog({
 
                   {/* Font style */}
                   <div className="space-y-3">
-                    <p className="flex items-center gap-2 text-sm font-medium text-[var(--brand-navy)]">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-[var(--brand-navy)]">
                       <Type className="h-4 w-4 text-[var(--brand-pink)]" />
                       Font style
                     </p>
@@ -786,10 +834,10 @@ function FillTemplateDialog({
                             onClick={() => setStandard("font_style", option.value)}
                             aria-pressed={isSelected}
                             className={cn(
-                              "rounded-2xl border px-3 py-3 text-center transition-colors",
+                              "rounded-2xl border px-3 py-3 text-center transition-all active:scale-[0.98]",
                               isSelected
-                                ? "border-[var(--brand-pink)] bg-[var(--brand-pink)]/5"
-                                : "border-slate-200 hover:border-slate-300"
+                                ? "border-[var(--brand-pink)] bg-[var(--brand-pink)]/5 shadow-sm shadow-[var(--brand-pink)]/10"
+                                : "border-slate-200 bg-white hover:border-slate-300"
                             )}
                           >
                             <span
@@ -807,7 +855,7 @@ function FillTemplateDialog({
 
                   {/* Font colour */}
                   <div className="space-y-3">
-                    <p className="flex items-center gap-2 text-sm font-medium text-[var(--brand-navy)]">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-[var(--brand-navy)]">
                       <Palette className="h-4 w-4 text-[var(--brand-pink)]" />
                       Font colour
                     </p>
@@ -867,8 +915,8 @@ function FillTemplateDialog({
                   </div>
 
                   {template.custom_fields.length > 0 && (
-                    <div className="space-y-3">
-                      <p className="text-sm font-medium text-[var(--brand-navy)]">
+                    <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4">
+                      <p className="text-sm font-semibold text-[var(--brand-navy)]">
                         This template's own fields
                       </p>
                       {template.custom_fields.map((field) => (
@@ -891,7 +939,7 @@ function FillTemplateDialog({
 
                   {errorMessage && <FormError message={errorMessage} />}
 
-                  <div className="flex gap-3">
+                  <div className="sticky bottom-0 z-10 flex gap-3 border-t border-slate-100 bg-white py-3">
                     <Button variant="outline" className="flex-1" onClick={() => setStep("pick-event")}>
                       Back
                     </Button>
@@ -908,9 +956,7 @@ function FillTemplateDialog({
 
                 {/* ---------------- live preview column ---------------- */}
                 <div className="lg:sticky lg:top-0 lg:self-start">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-                    Live preview
-                  </p>
+                  <SectionLabel className="mb-2">Live preview</SectionLabel>
                   <LiveCardPreview
                     template={template}
                     standardValues={standardValues}
@@ -928,6 +974,7 @@ function FillTemplateDialog({
             )}
           </div>
         )}
+        </div>
       </motion.div>
     </div>
   );
@@ -944,7 +991,7 @@ function ConfirmedStep({
 
   return (
     <div className="mt-6">
-      <div className="rounded-2xl bg-emerald-50 p-4">
+      <div className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
         <p className="flex items-center gap-2 text-sm font-medium text-emerald-800">
           <Check className="h-4 w-4" />
           This is now your active template.
@@ -954,7 +1001,7 @@ function ConfirmedStep({
         </p>
       </div>
 
-      <div className="mt-4 max-h-80 overflow-y-auto rounded-2xl">
+      <div className="mt-4 max-h-80 overflow-y-auto rounded-2xl ring-1 ring-slate-100">
         <PreviewCard
           preview={preview}
           isLoading={isLoading}

@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Ban, CheckCircle2, Pencil, Search, Trash2 } from "lucide-react";
+import { Ban, CheckCircle2, Pencil, Search, Trash2, Users } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/portal/PortalUI";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import AdminDialog, { DialogActions } from "@/components/admin/AdminDialog";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -88,7 +89,12 @@ function EditUserDialog({ user, isSelf, onClose }: { user: AdminUser; isSelf: bo
   };
 
   return (
-    <AdminDialog title="Edit user" onClose={onClose}>
+    <AdminDialog
+      title="Edit user"
+      description={user.email}
+      icon={Pencil}
+      onClose={onClose}
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="mt-3 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="full_name">Full name</Label>
@@ -116,8 +122,8 @@ function EditUserDialog({ user, isSelf, onClose }: { user: AdminUser; isSelf: bo
           {isSelf && <p className="text-xs text-slate-400">You can't change your own role.</p>}
           <FormError message={errors.role?.message} />
         </div>
-        <label className="flex items-center gap-2 text-sm text-[var(--brand-navy)]">
-          <input type="checkbox" className="h-4 w-4 rounded" {...register("is_verified")} />
+        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 p-3.5 text-sm text-[var(--brand-navy)] transition-colors hover:border-[var(--brand-pink)]/40">
+          <input type="checkbox" className="h-4 w-4 rounded accent-[var(--brand-pink)]" {...register("is_verified")} />
           Account verified
         </label>
 
@@ -252,10 +258,13 @@ export default function UserManagement() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">User Management</h1>
-        <p className="mt-1 text-sm text-slate-500">Search, filter, suspend, or remove any user on the platform.</p>
-      </div>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Admin"
+        icon={Users}
+        title="User Management"
+        description="Search, filter, suspend, or remove any user on the platform."
+      />
 
       <Card className="mb-4 p-4">
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -292,11 +301,11 @@ export default function UserManagement() {
 
       <Card className="overflow-hidden">
         {isError ? (
-          <div className="p-8 text-center text-sm text-slate-500">We couldn't load users right now. Please refresh the page.</div>
+          <div className="bg-rose-50/60 p-8 text-center text-sm text-rose-600">We couldn't load users right now. Please refresh the page.</div>
         ) : isLoading ? (
           <div className="space-y-3 p-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full" />
+              <Skeleton key={i} className="h-14 w-full rounded-2xl" />
             ))}
           </div>
         ) : users.length > 0 ? (
@@ -306,7 +315,7 @@ export default function UserManagement() {
               {users.map((user) => {
                 const isSelf = user.id === currentUserId;
                 return (
-                  <li key={user.id} className="p-4">
+                  <li key={user.id} className="p-4 transition-colors active:bg-slate-50">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-[var(--brand-navy)]">
@@ -350,7 +359,7 @@ export default function UserManagement() {
                   {users.map((user) => {
                     const isSelf = user.id === currentUserId;
                     return (
-                      <tr key={user.id}>
+                      <tr key={user.id} className="transition-colors hover:bg-slate-50/70">
                         <td className="px-4 py-3 font-medium text-[var(--brand-navy)]">
                           {user.full_name}
                           {isSelf && <span className="ml-1.5 text-xs font-medium text-slate-400">(you)</span>}
@@ -383,16 +392,21 @@ export default function UserManagement() {
             </div>
           </>
         ) : (
-          <div className="p-8 text-center text-sm text-slate-500">No users found.</div>
+          <div className="p-10 text-center text-sm text-slate-500">
+            <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+              <Users className="h-7 w-7" />
+            </span>
+            No users found.
+          </div>
         )}
       </Card>
 
       {data && data.pagination.total_pages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-3">
+        <div className="mt-6 flex items-center justify-center gap-3">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             Previous
           </Button>
-          <span className="text-sm text-slate-500">
+          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
             Page {data.pagination.current_page} of {data.pagination.total_pages}
           </span>
           <Button variant="outline" size="sm" disabled={page >= data.pagination.total_pages} onClick={() => setPage((p) => p + 1)}>

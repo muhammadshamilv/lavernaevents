@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Play, Star } from "lucide-react";
+import { ImageOff, Play, Star } from "lucide-react";
 import { resolveMediaUrl } from "@/lib/media";
 import type { GalleryMedia } from "@/types/gallery.types";
 
@@ -17,17 +17,21 @@ interface Props {
  * hover where a real mouse exists. */
 export default function MediaGrid({ items, onOpen, renderActions, className }: Props) {
   return (
-    <div className={className ?? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
+    <div className={className ?? "grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5"}>
       {items.map((item, index) => {
         const thumb = resolveMediaUrl(item.thumbnail) ?? (item.media_type === "IMAGE" ? resolveMediaUrl(item.file) : null);
+        const isVideo = item.media_type === "VIDEO";
 
         return (
-          <div key={item.id} className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
+          <div
+            key={item.id}
+            className="group relative aspect-square overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-900/5 transition-shadow duration-300 [@media(hover:hover)]:hover:shadow-lg"
+          >
             <button
               type="button"
               onClick={() => onOpen(index)}
-              className="block h-full w-full"
-              aria-label={`Open ${item.media_type === "VIDEO" ? "video" : "photo"} ${index + 1}`}
+              className="block h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-pink)]"
+              aria-label={`Open ${isVideo ? "video" : "photo"} ${index + 1}`}
             >
               {thumb ? (
                 <img
@@ -35,31 +39,42 @@ export default function MediaGrid({ items, onOpen, renderActions, className }: P
                   alt={item.caption || ""}
                   loading="lazy"
                   decoding="async"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover transition-transform duration-500 ease-out [@media(hover:hover)]:group-hover:scale-[1.06]"
                 />
               ) : (
-                <span className="flex h-full w-full items-center justify-center bg-slate-200 text-slate-400">
-                  <Play className="h-6 w-6" />
+                <span className="flex h-full w-full flex-col items-center justify-center gap-1 bg-slate-100 text-slate-400">
+                  {isVideo ? <Play className="h-6 w-6" /> : <ImageOff className="h-6 w-6" />}
+                  <span className="text-[11px]">No preview</span>
                 </span>
               )}
             </button>
 
-            {item.media_type === "VIDEO" && (
+            {/* soft vignette so overlays stay readable on bright photos */}
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10 opacity-0 transition-opacity duration-300 [@media(hover:hover)]:group-hover:opacity-100"
+            />
+
+            {isVideo && (
               <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white">
-                  <Play className="h-5 w-5 fill-current" />
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/45 text-white shadow-lg backdrop-blur-sm transition-transform duration-300 [@media(hover:hover)]:group-hover:scale-110">
+                  <Play className="ml-0.5 h-5 w-5 fill-current" />
                 </span>
               </span>
             )}
 
             {item.is_featured && (
-              <span className="pointer-events-none absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--brand-gold)] text-white">
+              <span
+                className="pointer-events-none absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--brand-gold)] text-white shadow-md"
+                title="Featured"
+              >
                 <Star className="h-3.5 w-3.5 fill-current" />
+                <span className="sr-only">Featured</span>
               </span>
             )}
 
             {renderActions && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-end gap-1.5 bg-gradient-to-t from-black/40 to-transparent p-2 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100">
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-end gap-1.5 bg-gradient-to-t from-black/55 to-transparent p-2 pt-8 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100">
                 <div className="pointer-events-auto flex gap-1.5">{renderActions(item)}</div>
               </div>
             )}

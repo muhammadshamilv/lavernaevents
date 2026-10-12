@@ -93,19 +93,23 @@ export default function CategoryManager({
   };
 
   if (isLoading) {
-    return <div className="h-9 w-full animate-pulse rounded-full bg-slate-100" />;
+    return <div className="flex gap-2">
+        {[20, 28, 24].map((w) => (
+          <div key={w} className="h-9 animate-pulse rounded-full bg-slate-100" style={{ width: `${w * 4}px` }} />
+        ))}
+      </div>;
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter guests by category">
       <button
         type="button"
         onClick={() => onSelectCategory("all")}
         className={cn(
-          "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
+          "min-h-9 rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
           activeCategory === "all"
-            ? "bg-[var(--brand-navy)] text-white"
-            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            ? "bg-[var(--brand-navy)] text-white shadow-md shadow-[var(--brand-navy)]/20"
+            : "bg-white text-slate-600 ring-1 ring-slate-200 [@media(hover:hover)]:hover:bg-slate-50 [@media(hover:hover)]:hover:ring-slate-300"
         )}
       >
         All guests
@@ -128,7 +132,7 @@ export default function CategoryManager({
             <button
               type="button"
               onClick={() => handleRename(category.id)}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100"
               aria-label="Save"
             >
               <Check className="h-3.5 w-3.5" />
@@ -136,7 +140,7 @@ export default function CategoryManager({
             <button
               type="button"
               onClick={() => setEditingId(null)}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
               aria-label="Cancel"
             >
               <X className="h-3.5 w-3.5" />
@@ -146,17 +150,17 @@ export default function CategoryManager({
           <div
             key={category.id}
             className={cn(
-              "group flex items-center gap-0.5 rounded-full py-1 pl-3.5 pr-1.5 text-xs font-semibold transition-colors",
+              "group flex min-h-9 items-center gap-0.5 rounded-full py-0.5 pl-3.5 pr-1.5 text-xs font-semibold transition-all",
               activeCategory === category.id
-                ? "bg-[var(--brand-pink)] text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                ? "bg-[image:var(--gradient-brand)] text-white shadow-md shadow-[var(--brand-pink)]/25"
+                : "bg-white text-slate-600 ring-1 ring-slate-200 [@media(hover:hover)]:hover:bg-slate-50 [@media(hover:hover)]:hover:ring-slate-300"
             )}
           >
             <button
               type="button"
               onClick={() => onSelectCategory(category.id)}
               aria-pressed={activeCategory === category.id}
-              className="py-1"
+              className="max-w-[12rem] truncate py-1.5"
             >
               {category.name} · {category.guest_count}
             </button>
@@ -190,10 +194,10 @@ export default function CategoryManager({
         type="button"
         onClick={() => onSelectCategory("uncategorized")}
         className={cn(
-          "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
+          "min-h-9 rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
           activeCategory === "uncategorized"
-            ? "bg-[var(--brand-navy)] text-white"
-            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            ? "bg-[var(--brand-navy)] text-white shadow-md shadow-[var(--brand-navy)]/20"
+            : "bg-white text-slate-600 ring-1 ring-slate-200 [@media(hover:hover)]:hover:bg-slate-50 [@media(hover:hover)]:hover:ring-slate-300"
         )}
       >
         Uncategorized
@@ -216,7 +220,7 @@ export default function CategoryManager({
           <button
             type="button"
             onClick={handleCreate}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 transition-colors hover:bg-emerald-100"
             aria-label="Add"
           >
             <Check className="h-3.5 w-3.5" />
@@ -224,14 +228,14 @@ export default function CategoryManager({
           <button
             type="button"
             onClick={() => setAdding(false)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
             aria-label="Cancel"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
       ) : (
-        <Button variant="outline" size="sm" className="h-8 rounded-full px-3 text-xs" onClick={() => setAdding(true)}>
+        <Button variant="outline" size="sm" className="h-9 rounded-full border-dashed px-3.5 text-xs" onClick={() => setAdding(true)}>
           <Plus className="h-3.5 w-3.5" />
           New category
         </Button>

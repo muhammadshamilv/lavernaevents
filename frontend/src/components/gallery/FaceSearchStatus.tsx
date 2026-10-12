@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle, CheckCircle2, ScanFace } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useFaceScanStatus, useStartFaceScanMutation } from "@/queries/useGalleryQueries";
 import { getApiErrorMessage } from "@/lib/apiError";
@@ -36,34 +35,48 @@ export default function FaceSearchStatus({ eventId }: Props) {
   const percent = Math.round((finished / status.total) * 100);
   const scanning = status.pending > 0;
 
-  let tone = "border-slate-100";
-  let icon = <ScanFace className="h-5 w-5 text-[var(--brand-navy)]" />;
+  let surface = "border-slate-100 bg-white";
+  let iconWrap = "bg-[var(--brand-navy)]/5 text-[var(--brand-navy)]";
+  let icon = <ScanFace className="h-5 w-5" />;
   let title = "Photo search";
   let text: string;
 
   if (!status.plan_enabled) {
     text = "Letting guests find their photos with a selfie comes with plans that include QR codes.";
   } else if (!status.available) {
-    tone = "border-amber-200 bg-amber-50";
-    icon = <AlertTriangle className="h-5 w-5 text-amber-600" />;
+    surface = "border-amber-200 bg-amber-50";
+    iconWrap = "bg-amber-100 text-amber-600";
+    icon = <AlertTriangle className="h-5 w-5" />;
     text = "Face search isn't switched on for this server yet. Your photos will be scanned as soon as it is.";
   } else if (scanning) {
+    surface = "border-[var(--brand-pink)]/15 bg-[var(--brand-pink)]/[0.03]";
+    iconWrap = "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]";
     title = "Preparing photo search";
     text = `${finished} of ${status.total} photos scanned. Guests can find their photos once this finishes.`;
   } else {
-    icon = <CheckCircle2 className="h-5 w-5 text-emerald-600" />;
+    surface = "border-emerald-200 bg-emerald-50/60";
+    iconWrap = "bg-emerald-100 text-emerald-600";
+    icon = <CheckCircle2 className="h-5 w-5" />;
     title = "Photo search is ready";
     text = `${status.faces_found} face${status.faces_found === 1 ? "" : "s"} found in ${status.processed} photo${status.processed === 1 ? "" : "s"}.`;
   }
 
   return (
-    <Card className={`mt-5 p-4 sm:p-5 ${tone}`} aria-live="polite">
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 shrink-0">{icon}</span>
+    <section className={`mt-5 rounded-2xl border p-4 soft-shadow sm:p-5 ${surface}`} aria-live="polite">
+      <div className="flex items-start gap-3.5">
+        <span className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconWrap}`}>
+          {scanning && canScan && (
+            <span aria-hidden="true" className="absolute inset-0 animate-ping rounded-xl bg-[var(--brand-pink)]/15" />
+          )}
+          <span className="relative">{icon}</span>
+        </span>
 
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[var(--brand-navy)]">{title}</p>
-          <p className="mt-0.5 text-sm text-slate-500">{text}</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-[var(--brand-navy)]">{title}</p>
+            {canScan && scanning && <span className="text-xs font-semibold tabular-nums text-[var(--brand-pink)]">{percent}%</span>}
+          </div>
+          <p className="mt-0.5 text-sm leading-relaxed text-slate-500">{text}</p>
 
           {canScan && scanning && (
             <div
@@ -72,9 +85,12 @@ export default function FaceSearchStatus({ eventId }: Props) {
               aria-valuemax={100}
               aria-valuenow={percent}
               aria-label="Photos scanned"
-              className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+              className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100"
             >
-              <div className="h-full rounded-full bg-[var(--brand-pink)] transition-[width]" style={{ width: `${percent}%` }} />
+              <div
+                className="h-full rounded-full bg-[image:var(--gradient-brand)] transition-[width] duration-500"
+                style={{ width: `${Math.max(percent, 4)}%` }}
+              />
             </div>
           )}
 
@@ -89,16 +105,16 @@ export default function FaceSearchStatus({ eventId }: Props) {
               {getApiErrorMessage(start.error, "Couldn't start scanning.")}
             </p>
           )}
+
+          {canScan && (status.failed > 0 || scanning) && (
+            <div className="mt-3">
+              <Button size="sm" variant="outline" isLoading={start.isPending} onClick={() => start.mutate()}>
+                {scanning ? "Check again" : "Scan again"}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
-
-      {canScan && (status.failed > 0 || scanning) && (
-        <div className="mt-3 sm:pl-8">
-          <Button size="sm" variant="outline" isLoading={start.isPending} onClick={() => start.mutate()}>
-            {scanning ? "Check again" : "Scan again"}
-          </Button>
-        </div>
-      )}
-    </Card>
+    </section>
   );
 }

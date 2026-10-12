@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   AlarmClock,
   CalendarDays,
+  ArrowRight,
   CalendarPlus,
   Image as ImageIcon,
   Mail,
@@ -29,6 +30,20 @@ const QUICK_ACTIONS = [
   { to: "/portal/templates", label: "Templates", icon: Mail, accent: "green" as const },
   { to: "/portal/gallery", label: "Gallery", icon: ImageIcon, accent: "gold" as const },
 ];
+
+const STAT_ACCENT = [
+  "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]",
+  "bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]",
+  "bg-[var(--brand-green)]/12 text-[var(--brand-green-dark)]",
+  "bg-[var(--brand-gold)]/15 text-[#8a5c0a]",
+];
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
 
 const accentIconClass: Record<(typeof QUICK_ACTIONS)[number]["accent"], string> = {
   pink: "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]",
@@ -98,23 +113,30 @@ export default function PortalDashboard() {
         className="mx-auto max-w-5xl"
       >
         <div
-          className="relative overflow-hidden rounded-3xl px-5 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-10"
+          className="relative overflow-hidden rounded-[2rem] px-5 py-7 shadow-xl shadow-[var(--brand-pink)]/15 sm:px-8 sm:py-9 lg:px-10 lg:py-11"
           style={{ background: "var(--gradient-brand)" }}
         >
-          <div
-            className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl"
-            aria-hidden
-          />
-          <div className="relative">
-            <p className="text-xs font-semibold uppercase tracking-wide text-white/70">
-              Dashboard
-            </p>
-            <h1 className="mt-1.5 text-xl font-bold text-white sm:text-2xl lg:text-3xl">
-              Welcome back, {firstName}
-            </h1>
-            <p className="mt-1.5 text-sm text-white/70">
-              Here's how your invitations are performing.
-            </p>
+          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl" aria-hidden />
+          <div className="pointer-events-none absolute -bottom-20 left-1/3 h-56 w-56 rounded-full bg-white/10 blur-3xl" aria-hidden />
+          <div className="bg-dots-white pointer-events-none absolute inset-0 opacity-30" aria-hidden />
+          <div className="relative flex flex-wrap items-end justify-between gap-5">
+            <div className="min-w-0">
+              <p className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white backdrop-blur">
+                <Sparkles className="h-3 w-3" />
+                Dashboard
+              </p>
+              <h1 className="mt-3 break-words text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
+                {greeting()}, {firstName}
+              </h1>
+              <p className="mt-2 text-sm text-white/80 sm:text-base">Here's how your invitations are performing.</p>
+            </div>
+            <Link
+              to="/portal/events/new"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-[var(--brand-navy)] shadow-lg transition-transform hover:-translate-y-0.5 active:scale-95"
+            >
+              <CalendarPlus className="h-4 w-4 text-[var(--brand-pink)]" />
+              New event
+            </Link>
           </div>
         </div>
 
@@ -136,19 +158,19 @@ export default function PortalDashboard() {
           )}
 
           <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-            {statTiles.map((tile) => (
-              <Card key={tile.label} className="p-4 sm:p-5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
-                  <tile.icon className="h-4 w-4" />
+            {statTiles.map((tile, tileIndex) => (
+              <Card key={tile.label} className="p-4 transition-all [@media(hover:hover)]:hover:-translate-y-0.5 [@media(hover:hover)]:hover:shadow-md sm:p-5">
+                <span className={cn("flex h-10 w-10 items-center justify-center rounded-xl", STAT_ACCENT[tileIndex % STAT_ACCENT.length])}>
+                  <tile.icon className="h-5 w-5" />
                 </span>
                 {overviewLoading ? (
                   <Skeleton className="mt-3 h-7 w-12" />
                 ) : (
-                  <p className="mt-3 text-xl font-bold text-[var(--brand-navy)] sm:text-2xl">
+                  <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-[var(--brand-navy)] sm:text-3xl">
                     {tile.value ?? 0}
                   </p>
                 )}
-                <p className="text-xs text-slate-500">{tile.label}</p>
+                <p className="mt-0.5 text-xs font-medium text-slate-500">{tile.label}</p>
               </Card>
             ))}
           </div>
@@ -160,16 +182,21 @@ export default function PortalDashboard() {
 
           {/* Per-channel performance chart. */}
           <div className="mt-8">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Channel performance
             </p>
             <Card className="mt-3 p-4 sm:p-5">
               {overviewLoading ? (
                 <Skeleton className="h-64 w-full" />
               ) : chartData.every((row) => row.Sent === 0 && row.Failed === 0) ? (
-                <p className="py-10 text-center text-sm text-slate-500">
-                  No sends yet - this chart fills in once you start sending invitations.
-                </p>
+                <div className="flex flex-col items-center py-10 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                    <Send className="h-5 w-5" />
+                  </span>
+                  <p className="mt-3 max-w-xs text-sm text-slate-500">
+                    No sends yet - this chart fills in once you start sending invitations.
+                  </p>
+                </div>
               ) : (
                 <div
                   className="h-64 w-full"
@@ -183,10 +210,10 @@ export default function PortalDashboard() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#EEF0F4" vertical={false} />
                       <XAxis dataKey="channel" tick={{ fontSize: 12, fill: "#64748B" }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 12, fill: "#64748B" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                      <Tooltip />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="Sent" fill="var(--brand-green)" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="Failed" fill="#F43F5E" radius={[6, 6, 0, 0]} />
+                      <Tooltip cursor={{ fill: "rgba(36,21,66,0.04)" }} contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 8px 24px -8px rgba(36,21,66,0.2)", fontSize: 12 }} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="Sent" fill="var(--brand-green)" radius={[8, 8, 0, 0]} maxBarSize={44} />
+                      <Bar dataKey="Failed" fill="#F43F5E" radius={[8, 8, 0, 0]} maxBarSize={44} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -197,7 +224,7 @@ export default function PortalDashboard() {
           {/* WhatsApp reminders are sent by the organizer tapping a link, so
               they pile up until someone acts - surface the total. */}
           {!overviewLoading && waitingReminders > 0 && (
-            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-white px-4 py-3.5 text-sm text-amber-800">
               <AlarmClock className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
                 {waitingReminders} WhatsApp reminder{waitingReminders === 1 ? " is" : "s are"} waiting
@@ -209,7 +236,7 @@ export default function PortalDashboard() {
           {/* Events needing attention. */}
           {!overviewLoading && attentionEvents.length > 0 && (
             <div className="mt-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                 Needs attention
               </p>
               <div className="mt-3 space-y-2.5">
@@ -219,7 +246,7 @@ export default function PortalDashboard() {
                     to={`/portal/events/${event.event_id}/invitations`}
                   >
                     <Card className="card-hover-lift flex items-center gap-3 p-4">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
                         <AlarmClock className="h-4.5 w-4.5" />
                       </span>
                       <div className="min-w-0 flex-1">
@@ -243,20 +270,20 @@ export default function PortalDashboard() {
             </div>
           )}
 
-          <p className="mt-8 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Quick actions
           </p>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             {QUICK_ACTIONS.map((action) => (
-              <Link key={action.to} to={action.to}>
+              <Link key={action.to} to={action.to} className="group block rounded-3xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/50">
                 <Card className="card-hover-lift flex h-full flex-col items-center gap-2.5 p-4 text-center sm:p-5">
                   <span
                     className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-full",
+                      "flex h-12 w-12 items-center justify-center rounded-2xl transition-transform group-hover:scale-110",
                       accentIconClass[action.accent]
                     )}
                   >
-                    <action.icon className="h-5 w-5" />
+                    <action.icon className="h-6 w-6" />
                   </span>
                   <p className="text-sm font-semibold text-[var(--brand-navy)]">
                     {action.label}
@@ -267,12 +294,13 @@ export default function PortalDashboard() {
           </div>
 
           <div className="mt-8 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Recent events
             </p>
             {recentEvents.length > 0 && (
-              <Link to="/portal/events" className="text-sm font-semibold text-[var(--brand-pink)]">
+              <Link to="/portal/events" className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--brand-pink)]">
                 View all
+                <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             )}
           </div>
@@ -315,9 +343,9 @@ export default function PortalDashboard() {
                     <Link
                       key={event.id}
                       to={`/portal/events/${event.id}`}
-                      className="flex items-center gap-3 rounded-xl border border-slate-100 p-2.5 transition-colors hover:bg-slate-50"
+                      className="flex items-center gap-3 rounded-2xl border border-slate-100 p-2.5 transition-all hover:border-[var(--brand-pink)]/30 hover:bg-slate-50/80"
                     >
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
                         {coverUrl ? (
                           <img src={coverUrl} alt="" className="h-full w-full object-cover" />
                         ) : (

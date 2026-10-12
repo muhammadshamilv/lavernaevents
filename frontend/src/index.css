@@ -382,3 +382,70 @@ summary:focus-visible,
     min-width: 2.5rem;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Public website motion (Phase 28)                                    */
+/* ------------------------------------------------------------------ */
+
+@keyframes aurora-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(8%, 10%, 0) scale(1.18); }
+}
+
+@keyframes aurora-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); }
+  50% { transform: translate3d(-10%, -8%, 0) scale(0.95); }
+}
+
+@keyframes aurora-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-6%, 9%, 0) scale(1.2); }
+}
+
+@keyframes marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes shimmer-text {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.animate-aurora-a { animation: aurora-a 16s ease-in-out infinite; }
+.animate-aurora-b { animation: aurora-b 20s ease-in-out infinite; }
+.animate-aurora-c { animation: aurora-c 24s ease-in-out infinite; }
+.animate-marquee { animation: marquee 38s linear infinite; }
+
+/* Pause the marquee while someone is reading it. */
+.marquee-pause:hover .animate-marquee,
+.marquee-pause:focus-within .animate-marquee {
+  animation-play-state: paused;
+}
+
+/* Soft dotted texture for dark hero bands. */
+.bg-dots-white {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Brand gradient on text (pink to gold to green), slowly drifting. */
+.text-gradient-brand {
+  background: linear-gradient(100deg, #ff7ab8 0%, #ffd27a 45%, #8fe06a 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer-text 9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-aurora-a,
+  .animate-aurora-b,
+  .animate-aurora-c,
+  .animate-marquee,
+  .text-gradient-brand {
+    animation: none;
+  }
+}

@@ -1,6 +1,7 @@
-import { CalendarDays, HardDrive } from "lucide-react";
+import { BarChart3, CalendarDays, HardDrive } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/portal/PortalUI";
 import { useAdminReports } from "@/queries/useAdminQueries";
 
 function formatCurrency(amount: number): string {
@@ -43,7 +44,7 @@ function BarChart({
   label: string;
 }) {
   if (data.length === 0) {
-    return <div className="flex h-40 items-center justify-center text-sm text-slate-400">No data for this period yet.</div>;
+    return <div className="flex h-40 items-center justify-center rounded-2xl bg-slate-50/70 text-sm text-slate-400">No data for this period yet.</div>;
   }
 
   const max = Math.max(...data.map((d) => d.value), 1);
@@ -80,13 +81,16 @@ export default function Reports() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">Reports</h1>
-        <p className="mt-1 text-sm text-slate-500">Revenue, registrations, and platform usage trends.</p>
-      </div>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Admin"
+        icon={BarChart3}
+        title="Reports"
+        description="Revenue, registrations, and platform usage trends."
+      />
 
       {isError ? (
-        <Card className="p-8 text-center text-sm text-slate-500">We couldn't load reports right now. Please refresh the page.</Card>
+        <Card className="bg-rose-50/60 p-8 text-center text-sm text-rose-600 ring-1 ring-rose-100">We couldn't load reports right now. Please refresh the page.</Card>
       ) : isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-64 w-full rounded-3xl" />
@@ -95,25 +99,25 @@ export default function Reports() {
       ) : reports ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Card className="p-5">
+            <Card className="card-hover-lift p-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0f766e]/10 text-[#0f766e]">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0f766e]/10 text-[#0f766e]">
                   <CalendarDays className="h-5 w-5" />
                 </div>
                 <div>
                   <p className="text-xs font-medium text-slate-500">Active Events</p>
-                  <p className="text-xl font-bold text-[var(--brand-navy)]">{reports.active_events_count ?? 0}</p>
+                  <p className="text-2xl font-bold tracking-tight text-[var(--brand-navy)]">{reports.active_events_count ?? 0}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-5">
+            <Card className="card-hover-lift p-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#7c3aed]/10 text-[#7c3aed]">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#7c3aed]/10 text-[#7c3aed]">
                   <HardDrive className="h-5 w-5" />
                 </div>
                 <div>
                   <p className="text-xs font-medium text-slate-500">Storage Usage</p>
-                  <p className="text-xl font-bold text-[var(--brand-navy)]">{formatStorage(reports.storage_usage_mb)}</p>
+                  <p className="text-2xl font-bold tracking-tight text-[var(--brand-navy)]">{formatStorage(reports.storage_usage_mb)}</p>
                 </div>
               </div>
             </Card>
@@ -141,6 +145,7 @@ export default function Reports() {
               <p className="mt-1 text-sm text-slate-500">Subscribers with an active, unexpired plan.</p>
             </div>
             {reports.membership_statistics && reports.membership_statistics.length > 0 ? (
+              <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
@@ -150,15 +155,16 @@ export default function Reports() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {reports.membership_statistics.map((stat) => (
-                    <tr key={stat.plan_name}>
+                    <tr key={stat.plan_name} className="transition-colors hover:bg-slate-50/70">
                       <td className="px-5 py-3 font-medium text-[var(--brand-navy)]">{stat.plan_name}</td>
                       <td className="px-5 py-3 text-right text-slate-500">{stat.active_subscribers}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             ) : (
-              <div className="p-5 text-center text-sm text-slate-500">No subscription data yet.</div>
+              <div className="p-8 text-center text-sm text-slate-500">No subscription data yet.</div>
             )}
           </Card>
         </div>

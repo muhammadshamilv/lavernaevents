@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, Users } from "lucide-react";
+import { BarChart3, Download, ListChecks, Send, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,6 +8,7 @@ import { downloadInvitationReportPdf } from "@/api/invitations.api";
 import { toastStore } from "@/stores/toast.store";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
+import { IconChip } from "@/components/portal/PortalUI";
 import type {
   CategoryReportBreakdown,
   InvitationChannel,
@@ -40,7 +41,7 @@ function SendSummaryTable({ summary }: { summary: SendSummary }) {
   return (
     <table className="w-full min-w-[300px] text-left text-sm">
       <thead>
-        <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
           <th className="py-2 pr-4">Channel</th>
           <th className="py-2 pr-4">Sent</th>
           <th className="py-2 pr-4">Failed</th>
@@ -50,7 +51,7 @@ function SendSummaryTable({ summary }: { summary: SendSummary }) {
       <tbody className="divide-y divide-slate-100">
         {(Object.keys(summary) as InvitationChannel[]).map((channel) => (
           <tr key={channel}>
-            <td className="py-2 pr-4 font-medium text-[var(--brand-navy)]">
+            <td className="py-2.5 pr-4 font-medium text-[var(--brand-navy)]">
               {CHANNEL_LABEL[channel]}
             </td>
             <td className="py-2 pr-4 text-slate-600">{summary[channel].sent}</td>
@@ -67,7 +68,7 @@ function RsvpSummaryTable({ summary }: { summary: RsvpSummary }) {
   return (
     <table className="w-full min-w-[260px] text-left text-sm">
       <thead>
-        <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
           <th className="py-2 pr-4">Response</th>
           <th className="py-2 pr-4">Guests</th>
           <th className="py-2">Headcount</th>
@@ -98,18 +99,21 @@ function RsvpSummaryTable({ summary }: { summary: RsvpSummary }) {
 function CategoryCard({ category }: { category: CategoryReportBreakdown }) {
   return (
     <Card className="p-4 sm:p-5">
-      <h3 className="font-semibold text-[var(--brand-navy)]">{category.category_name}</h3>
+      <h3 className="flex items-center gap-2 font-semibold text-[var(--brand-navy)]">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--brand-pink)]" />
+        <span className="min-w-0 truncate">{category.category_name}</span>
+      </h3>
       <div className="mt-3 grid gap-4 sm:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <div className="min-w-0 rounded-2xl bg-slate-50/70 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Sends
           </p>
           <div className="mt-2 overflow-x-auto">
             <SendSummaryTable summary={category.send_summary} />
           </div>
         </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <div className="min-w-0 rounded-2xl bg-slate-50/70 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             RSVPs
           </p>
           <div className="mt-2 overflow-x-auto">
@@ -160,7 +164,7 @@ export default function InvitationReportTab({ eventId }: { eventId: number }) {
 
   if (isError || !report) {
     return (
-      <p className="mt-6 text-center text-sm text-rose-600">
+      <p className="mt-6 rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-600">
         Couldn't load the report right now. Please refresh the page.
       </p>
     );
@@ -169,8 +173,8 @@ export default function InvitationReportTab({ eventId }: { eventId: number }) {
   return (
     <div className="mt-6 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <Users className="h-4 w-4" />
+        <div className="flex items-center gap-2 rounded-full bg-white px-3.5 py-2 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
+          <Users className="h-4 w-4 text-[var(--brand-pink)]" />
           {report.total_guests} guest{report.total_guests === 1 ? "" : "s"} &middot; expected
           headcount {report.total_expected_headcount}
         </div>
@@ -181,22 +185,28 @@ export default function InvitationReportTab({ eventId }: { eventId: number }) {
       </div>
 
       <Card className="p-4 sm:p-5">
-        <h3 className="font-semibold text-[var(--brand-navy)]">Send Summary</h3>
-        <div className="mt-3 overflow-x-auto">
+        <div className="flex items-center gap-3">
+          <IconChip icon={Send} accent="pink" />
+          <h3 className="font-semibold text-[var(--brand-navy)]">Send Summary</h3>
+        </div>
+        <div className="mt-4 overflow-x-auto">
           <SendSummaryTable summary={report.send_summary} />
         </div>
       </Card>
 
       <Card className="p-4 sm:p-5">
-        <h3 className="font-semibold text-[var(--brand-navy)]">RSVP Summary</h3>
-        <div className="mt-3 overflow-x-auto">
+        <div className="flex items-center gap-3">
+          <IconChip icon={BarChart3} accent="green" />
+          <h3 className="font-semibold text-[var(--brand-navy)]">RSVP Summary</h3>
+        </div>
+        <div className="mt-4 overflow-x-auto">
           <RsvpSummaryTable summary={report.rsvp_summary} />
         </div>
       </Card>
 
       {report.category_breakdown.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Breakdown by Category
           </h3>
           {report.category_breakdown.map((category) => (
@@ -206,7 +216,8 @@ export default function InvitationReportTab({ eventId }: { eventId: number }) {
       )}
 
       <Card className="overflow-hidden">
-        <div className="border-b border-slate-100 p-4 sm:p-5">
+        <div className="flex items-center gap-3 border-b border-slate-100 p-4 sm:p-5">
+          <IconChip icon={ListChecks} accent="navy" />
           <h3 className="font-semibold text-[var(--brand-navy)]">Guest Detail Log</h3>
         </div>
 
@@ -251,7 +262,7 @@ export default function InvitationReportTab({ eventId }: { eventId: number }) {
             <div className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                     <th scope="col" className="px-4 py-3 sm:px-6">Guest</th>
                     <th scope="col" className="px-4 py-3 sm:px-6">Category</th>
                     <th scope="col" className="px-4 py-3 sm:px-6">Invitation</th>

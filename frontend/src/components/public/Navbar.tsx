@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { LogOut, Menu, X } from "lucide-react";
-import logo from "@/assets/laverna-logo.png";
+import Logo from "@/components/brand/Logo";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/stores/auth.store";
@@ -109,12 +109,6 @@ function MobileAccountMenu({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
-const desktopLinkClass = ({ isActive }: { isActive: boolean }) =>
-  cn(
-    "relative rounded-full px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-[var(--brand-navy)] lg:px-4",
-    isActive && "text-[var(--brand-navy)] after:absolute after:inset-x-4 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-[var(--brand-pink)]"
-  );
-
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -147,24 +141,44 @@ export default function Navbar() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-50 border-b bg-white/85 backdrop-blur-md transition-shadow",
+        "sticky top-0 z-50 border-b bg-white/85 backdrop-blur-md transition-shadow duration-300",
         scrolled ? "border-slate-200/80 shadow-[0_8px_24px_-16px_rgba(36,21,66,0.25)]" : "border-slate-100"
       )}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="flex shrink-0 items-center gap-2" aria-label="LavernaEvents home">
-          <img src={logo} alt="LavernaEvents" className="h-9 w-auto object-contain" />
+      <div
+        className={cn(
+          "mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 transition-[height] duration-300 sm:px-6 lg:px-8",
+          scrolled ? "h-16" : "h-[4.5rem]"
+        )}
+      >
+        <Link to="/" className="flex shrink-0 items-center rounded-lg" aria-label="LavernaEvents home">
+          <Logo size="md" />
         </Link>
 
-        <nav aria-label="Main" className="hidden items-center md:flex">
+        <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
           {NAV_LINKS.map((link) => (
-            <NavLink key={link.to} to={link.to} className={desktopLinkClass}>
-              {link.label}
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className="relative rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-[var(--brand-navy)]"
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <motion.span
+                      layoutId="nav-active-pill"
+                      className="absolute inset-0 -z-10 rounded-full bg-[var(--brand-pink)]/10"
+                      transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                    />
+                  )}
+                  <span className={cn(isActive && "text-[var(--brand-pink)]")}>{link.label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
 
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden shrink-0 items-center gap-2 lg:flex">
           {isChecking ? (
             <>
               <Skeleton className="h-9 w-16 rounded-full" />
@@ -187,7 +201,7 @@ export default function Navbar() {
         <button
           type="button"
           onClick={() => setMenuOpen((prev) => !prev)}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--brand-navy)] transition-colors hover:bg-slate-100 md:hidden"
+          className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--brand-navy)] transition-colors hover:bg-slate-100 lg:hidden"
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
           aria-controls="mobile-menu"
@@ -205,7 +219,7 @@ export default function Navbar() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closeMenu}
-              className="absolute inset-x-0 top-full h-[100dvh] bg-slate-900/30 md:hidden"
+              className="absolute inset-x-0 top-full h-[100dvh] bg-slate-900/30 lg:hidden"
               aria-hidden="true"
             />
             <motion.div
@@ -214,7 +228,7 @@ export default function Navbar() {
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="max-h-[calc(100dvh-4rem)] overflow-y-auto border-t border-slate-100 bg-white md:hidden"
+              className="max-h-[calc(100dvh-4.5rem)] overflow-y-auto border-t border-slate-100 bg-white lg:hidden"
             >
               <nav aria-label="Mobile" className="flex flex-col gap-1 px-4 py-4">
                 {[{ to: "/", label: "Home" }, ...NAV_LINKS].map((link) => (

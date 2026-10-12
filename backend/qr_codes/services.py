@@ -28,6 +28,25 @@ logger = logging.getLogger(__name__)
 # a different balance.
 DEFAULT_FACE_MATCH_TOLERANCE = 0.5
 
+# Photos between the sure tolerance above and this one are offered to the
+# guest separately as "might be you". Set FACE_POSSIBLE_TOLERANCE equal to
+# FACE_MATCH_TOLERANCE in settings to switch that second list off.
+DEFAULT_FACE_POSSIBLE_TOLERANCE = 0.56
+
+# A face that is "possible" for the selfie but this close to a face that
+# surely is the guest counts as sure (same person, different angle/light).
+DEFAULT_FACE_SUPPORT_TOLERANCE = 0.42
+
+# A guest can add up to this many selfies (front, a little left, a little
+# right): the closest one decides, which finds far more of their photos.
+MAX_SELFIES = 3
+
+# The selfie is ONE face, so it is worth encoding it carefully: the encoder
+# looks at the face this many slightly shifted times and averages the result,
+# which removes random noise from the one number set every photo is
+# compared with. (Costs well under a second.)
+SELFIE_ENCODING_JITTERS = 10
+
 # A selfie from a modern phone is 4-12 MB / 12+ megapixels. Face detection
 # on that is slow (this runs inside a web request) and gains nothing, so it
 # is shrunk first. 1024px on the long edge is plenty for one close-up face.
@@ -266,6 +285,11 @@ def _largest_face_encoding(face_recognition, image_array):
     locations = face_recognition.face_locations(image_array)
 
     if not locations:
+        # A selfie taken at arm's length in dim light: look once more, at
+        # a finer scale, before giving up. (A selfie is small, so it is cheap.)
+        locations = face_recognition.face_locations(image_array, number_of_times_to_upsample=2)
+
+    if not locations:
         raise QRCodeError(
             "No face was detected in that photo. Please retake your selfie in good lighting, facing the camera.",
             code="no_face_detected",
@@ -276,7 +300,9 @@ def _largest_face_encoding(face_recognition, image_array):
         key=lambda box: (box[2] - box[0]) * (box[1] - box[3]),  # (top, right, bottom, left)
     )
 
-    encodings = face_recognition.face_encodings(image_array, [largest])
+    encodings = face_recognition.face_encodings(
+        image_array, [largest], num_jitters=SELFIE_ENCODING_JITTERS
+    )
 
     if not encodings:
         raise QRCodeError(
@@ -287,14 +313,19 @@ def _largest_face_encoding(face_recognition, image_array):
     return encodings[0]
 
 
-def match_selfie_to_gallery(event: Event, selfie_file) -> tuple[list[GalleryMedia], GuestSelfieSession]:
-    """Given one selfie photo, find every gallery photo in `event` that
-    contains the same face.
+def match_selfie_to_gallery(
+    event: Event, selfie_file=None, selfie_files=None
+) -> tuple[list[GalleryMedia], GuestSelfieSession]:
+    """Given one or more selfies of the same guest, find every gallery photo
+    and video in `event` that contains that face.
 
-    The selfie is read into memory only, never saved, and discarded when
+    Each returned item carries ``match_confidence`` ("high" or "possible",
+    see face_matching.py); sure matches come first.
+
+    The selfies are read into memory only, never saved, and discarded when
     this returns - keeping a stranger's biometric photo with no account or
     consent attached would be a privacy liability with no product benefit.
-    Only the (non-reversible) encoding is compared against the encodings
+    Only the (non-reversible) encodings are compared against the encodings
     computed when each gallery photo was uploaded.
     """
 
@@ -307,14 +338,39 @@ def match_selfie_to_gallery(event: Event, selfie_file) -> tuple[list[GalleryMedi
             code="face_matching_unavailable",
         )
 
-    image_array = _load_selfie_array(selfie_file)
-    selfie_encoding = _largest_face_encoding(face_recognition, image_array)
+    files = list(selfie_files) if selfie_files else ([selfie_file] if selfie_file is not None else [])
+    files = files[:MAX_SELFIES]
 
-    matched_media_ids = _find_matching_media_ids(event, selfie_encoding)
+    if not files:
+        raise QRCodeError("Please upload a selfie photo.", code="no_face_detected")
 
-    matched_media = list(
-        GalleryMedia.objects.filter(id__in=matched_media_ids).order_by("-is_featured", "-created_at")[:MAX_MATCHES]
-    )
+    probes = []
+
+    for number, upload in enumerate(files, start=1):
+        try:
+            probes.append(_largest_face_encoding(face_recognition, _load_selfie_array(upload)))
+        except QRCodeError as error:
+            if len(files) == 1:
+                raise
+            raise QRCodeError(f"Photo {number}: {error.message}", code=error.code) from error
+
+    ranked = _find_matches(event, probes)
+
+    by_id = {
+        media.id: media
+        for media in GalleryMedia.objects.filter(id__in=[match.media_id for match in ranked])
+    }
+
+    matched_media = []
+
+    for match in ranked[:MAX_MATCHES]:
+        media = by_id.get(match.media_id)
+
+        if media is None:
+            continue
+
+        media.match_confidence = match.confidence
+        matched_media.append(media)
 
     session = GuestSelfieSession.objects.create(event=event, match_count=len(matched_media))
     if matched_media:
@@ -323,36 +379,44 @@ def match_selfie_to_gallery(event: Event, selfie_file) -> tuple[list[GalleryMedi
     return matched_media, session
 
 
-def _find_matching_media_ids(event: Event, selfie_encoding) -> set[int]:
-    """Compares one selfie encoding against every stored FaceEmbedding
-    for this event's photos, returning the ids of media with at least one
-    matching face."""
+def _find_matches(event: Event, probes) -> list:
+    """Compares the guest's encodings against every stored FaceEmbedding of
+    this event's photos and videos. Returns face_matching.FaceMatch items,
+    best first."""
 
-    import face_recognition
     import numpy as np
 
     from gallery.models import FaceEmbedding
 
-    rows = FaceEmbedding.objects.filter(
-        media__event=event,
-        media__media_type=GalleryMedia.MediaType.IMAGE,
-    ).values_list("media_id", "encoding_json")
+    from .face_matching import rank_matches
+
+    rows = FaceEmbedding.objects.filter(media__event=event).values_list("media_id", "encoding_json")
 
     known_media_ids: list[int] = []
     known_encodings: list = []
 
     for media_id, encoding_json in rows.iterator():
         known_media_ids.append(media_id)
-        known_encodings.append(np.array(json.loads(encoding_json)))
+        known_encodings.append(json.loads(encoding_json))
 
     if not known_encodings:
-        return set()
+        return []
 
-    tolerance = float(getattr(settings, "FACE_MATCH_TOLERANCE", DEFAULT_FACE_MATCH_TOLERANCE))
-    distances = face_recognition.face_distance(known_encodings, selfie_encoding)
+    strong = float(getattr(settings, "FACE_MATCH_TOLERANCE", DEFAULT_FACE_MATCH_TOLERANCE))
+    possible = float(getattr(settings, "FACE_POSSIBLE_TOLERANCE", DEFAULT_FACE_POSSIBLE_TOLERANCE))
+    support = float(getattr(settings, "FACE_SUPPORT_TOLERANCE", DEFAULT_FACE_SUPPORT_TOLERANCE))
 
-    return {
-        media_id
-        for media_id, distance in zip(known_media_ids, distances)
-        if distance <= tolerance
-    }
+    # Several selfies: also compare with their average, which smooths out
+    # one bad angle or one bad light.
+    guest = [np.asarray(probe, dtype=float) for probe in probes]
+    if len(guest) > 1:
+        guest.append(np.mean(guest, axis=0))
+
+    return rank_matches(
+        known_media_ids,
+        known_encodings,
+        guest,
+        strong=strong,
+        possible=possible,
+        support=support,
+    )

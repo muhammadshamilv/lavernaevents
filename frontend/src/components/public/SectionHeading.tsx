@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 export default function SectionHeading({
   title,
   description,
+  eyebrow,
   align = "left",
   tone = "dark",
   action,
@@ -11,6 +12,8 @@ export default function SectionHeading({
 }: {
   title: string;
   description?: string;
+  /** Small uppercase label above the title. */
+  eyebrow?: string;
   align?: "left" | "center";
   tone?: "dark" | "light";
   action?: ReactNode;
@@ -27,9 +30,19 @@ export default function SectionHeading({
       )}
     >
       <div className={cn("max-w-2xl", centered && "mx-auto")}>
+        {eyebrow && (
+          <p
+            className={cn(
+              "mb-3 text-xs font-semibold uppercase tracking-[0.18em]",
+              tone === "light" ? "text-[var(--brand-pink-light)]" : "text-[var(--brand-pink)]"
+            )}
+          >
+            {eyebrow}
+          </p>
+        )}
         <h2
           className={cn(
-            "text-2xl font-semibold tracking-tight sm:text-4xl",
+            "text-balance text-2xl font-semibold tracking-tight sm:text-4xl",
             tone === "light" ? "text-white" : "text-[var(--brand-navy)]"
           )}
         >

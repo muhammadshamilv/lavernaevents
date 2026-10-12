@@ -68,6 +68,6 @@ export function useScannedEvent(token?: string) {
 
 export function useSelfieMatchMutation(token: string) {
   return useMutation({
-    mutationFn: (selfie: File) => matchSelfie(token, selfie),
+    mutationFn: (selfies: File[]) => matchSelfie(token, selfies),
   });
 }

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   CalendarClock,
+  CreditCard,
   Mail,
   MessageSquare,
   Phone,
@@ -12,6 +13,7 @@ import { CHECKOUT_LOAD_ERROR, startCashfreeCheckout } from "@/lib/cashfree";
 import { Card, FormError } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IconChip, PageHeader, SectionLabel } from "@/components/portal/PortalUI";
 import {
   useMySubscription,
   useMyUsage,
@@ -68,24 +70,29 @@ function UsageBar({
 
   return (
     <Card className="p-5">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-slate-400" />
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+          <Icon className="h-5 w-5" />
+        </span>
         <p className="text-sm font-semibold text-[var(--brand-navy)]">{label}</p>
       </div>
 
       {isUnlimited ? (
-        <p className="mt-3 text-sm text-slate-500">Unlimited</p>
+        <p className="mt-4 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">Unlimited</p>
       ) : isNone ? (
-        <p className="mt-3 text-sm text-slate-500">Not included in your plan.</p>
+        <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">Not included in your plan.</p>
       ) : (
         <>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-100">
             <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${pct}%`, backgroundColor: isLow ? "#dc2626" : "#0f766e" }}
+              className={cn(
+                "h-full rounded-full transition-all duration-700",
+                isLow ? "bg-rose-500" : "bg-[image:var(--gradient-brand)]"
+              )}
+              style={{ width: `${pct}%` }}
             />
           </div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-slate-500">
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-slate-500">
             <span>
               {safeUsed.toLocaleString()} used of {effectiveTotal?.toLocaleString()}
               {safeTopup > 0 && (
@@ -97,7 +104,7 @@ function UsageBar({
             </span>
           </div>
           {isLow && (
-            <p className="mt-2 flex items-center gap-1 text-xs font-medium text-rose-600">
+            <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               Running low - consider buying a topup pack below.
             </p>
@@ -110,9 +117,9 @@ function UsageBar({
 
 function LimitTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+    <div className="rounded-2xl bg-white/80 px-4 py-3 ring-1 ring-slate-100">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-0.5 truncate text-sm font-semibold text-[var(--brand-navy)]">{value}</p>
+      <p className="mt-0.5 truncate text-base font-semibold text-[var(--brand-navy)]">{value}</p>
     </div>
   );
 }
@@ -127,8 +134,11 @@ function PlanSummary() {
 
   if (!subscription || !usage?.has_active_plan) {
     return (
-      <Card className="p-6 text-center">
-        <p className="text-sm text-slate-500">You don't have an active plan.</p>
+      <Card className="p-8 text-center">
+        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+          <CreditCard className="h-7 w-7" />
+        </span>
+        <p className="mt-4 text-sm text-slate-500">You don't have an active plan.</p>
         <Link to="/pricing" className={buttonVariants({ className: "mt-4" })}>
           Choose a plan
         </Link>
@@ -144,18 +154,16 @@ function PlanSummary() {
       : `${usage.template_count ?? 0} / ${usage.template_limit}`;
 
   return (
-    <Card className="p-5 sm:p-6">
+    <Card className="overflow-hidden bg-[image:var(--gradient-brand-soft)] p-5 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            Current plan
-          </p>
-          <h2 className="mt-1 truncate text-xl font-bold text-[var(--brand-navy)]">
+          <SectionLabel>Current plan</SectionLabel>
+          <h2 className="mt-1 truncate text-2xl font-bold tracking-tight text-[var(--brand-navy)]">
             {subscription.plan.name}
           </h2>
           <p
             className={cn(
-              "mt-1 flex items-center gap-1.5 text-sm",
+              "mt-2 flex flex-wrap items-center gap-1.5 text-sm",
               endingSoon ? "font-medium text-rose-600" : "text-slate-500"
             )}
           >
@@ -207,18 +215,16 @@ function TopupPackCard({ pack }: { pack: TopupPack }) {
   const Icon = pack.kind === "VOICE_CALLS" ? Phone : MessageSquare;
 
   return (
-    <Card className="flex flex-col p-5">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-slate-400" />
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          {pack.kind === "VOICE_CALLS" ? "Voice Calls" : "Invitations"}
-        </p>
+    <Card className="card-hover-lift flex flex-col p-5">
+      <div className="flex items-center gap-3">
+        <IconChip icon={Icon} accent={pack.kind === "VOICE_CALLS" ? "navy" : "pink"} />
+        <SectionLabel>{pack.kind === "VOICE_CALLS" ? "Voice Calls" : "Invitations"}</SectionLabel>
       </div>
-      <h3 className="mt-2 font-bold text-[var(--brand-navy)]">{pack.name}</h3>
-      <p className="mt-1 text-sm text-slate-500">
+      <h3 className="mt-3 font-bold text-[var(--brand-navy)]">{pack.name}</h3>
+      <p className="mt-1 w-fit rounded-full bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
         +{pack.quantity.toLocaleString()} {pack.kind === "VOICE_CALLS" ? "calls" : "invitations"}
       </p>
-      <p className="mt-3 text-2xl font-bold text-[var(--brand-navy)]">{formatPrice(pack.price)}</p>
+      <p className="mt-3 text-3xl font-bold tracking-tight text-[var(--brand-navy)]">{formatPrice(pack.price)}</p>
 
       <div className="mt-4 flex-1" />
 
@@ -250,7 +256,7 @@ function HistoryRow({ item }: { item: PaymentHistoryItem }) {
   const style = STATUS_STYLE[item.status];
 
   return (
-    <li className="flex items-center justify-between gap-3 py-3">
+    <li className="flex items-center justify-between gap-3 py-3.5">
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-[var(--brand-navy)]">
           {item.description}
@@ -266,7 +272,7 @@ function HistoryRow({ item }: { item: PaymentHistoryItem }) {
         </p>
         <span
           className={cn(
-            "mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold",
+            "mt-1 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
             style.className
           )}
         >
@@ -284,16 +290,16 @@ export default function Billing() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-[var(--brand-navy)] sm:text-2xl">Billing & Usage</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Your plan, what you've used, and extra packs when you need more.
-        </p>
-      </div>
+      <PageHeader
+        className="mb-6"
+        icon={CreditCard}
+        title="Billing & Usage"
+        description="Your plan, what you've used, and extra packs when you need more."
+      />
 
       <PlanSummary />
 
-      <h2 className="mb-3 mt-8 text-lg font-bold text-[var(--brand-navy)]">Usage</h2>
+      <h2 className="mb-3 mt-10 text-lg font-bold text-[var(--brand-navy)]">Usage</h2>
 
       {usageError ? (
         <Card className="p-6 text-center text-sm text-slate-500">
@@ -325,7 +331,7 @@ export default function Billing() {
         </div>
       ) : null}
 
-      <div className="mt-8">
+      <div className="mt-10">
         <h2 className="text-lg font-bold text-[var(--brand-navy)]">Buy a topup pack</h2>
         <p className="mt-1 text-sm text-slate-500">
           Topup packs add extra invitations or voice calls on top of your plan. They don't
@@ -355,9 +361,9 @@ export default function Billing() {
         )}
       </div>
 
-      <div className="mt-8">
+      <div className="mt-10">
         <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--brand-navy)]">
-          <Receipt className="h-5 w-5 text-slate-400" />
+          <Receipt className="h-5 w-5 text-[var(--brand-pink)]" />
           Billing history
         </h2>
 
@@ -374,7 +380,7 @@ export default function Billing() {
               ))}
             </ul>
           ) : (
-            <p className="py-6 text-center text-sm text-slate-500">No payments yet.</p>
+            <p className="py-8 text-center text-sm text-slate-500">No payments yet.</p>
           )}
         </Card>
       </div>

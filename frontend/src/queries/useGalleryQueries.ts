@@ -1,14 +1,23 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   deleteGalleryMedia,
   getEventGalleryPage,
   getFaceScanStatus,
+  getGalleryOverview,
   startFaceScan,
   toggleGalleryMediaFeatured,
 } from "@/api/gallery.api";
+import type { GalleryOverviewParams } from "@/types/gallery.types";
 
 export const galleryKeys = {
   all: ["gallery"] as const,
+  overview: (params: GalleryOverviewParams) => ["gallery", "overview", params] as const,
   event: (eventId: number) => ["gallery", "event", eventId] as const,
   // Sits under the event key, so every upload / delete refreshes it too.
   faceScan: (eventId: number) => ["gallery", "event", eventId, "face-scan"] as const,
@@ -89,5 +98,20 @@ export function useStartFaceScanMutation(eventId: number | undefined) {
     onSuccess: (summary) => {
       if (eventId) queryClient.setQueryData(galleryKeys.faceScan(eventId), summary);
     },
+  });
+}
+
+/**
+ * The Gallery hub. Always refetched when the page opens, so counts are
+ * fresh after uploading in an event; the previous page stays on screen
+ * while the next one loads (no flicker when searching or paging).
+ */
+export function useGalleryOverview(params: GalleryOverviewParams) {
+  return useQuery({
+    queryKey: galleryKeys.overview(params),
+    queryFn: () => getGalleryOverview(params),
+    placeholderData: keepPreviousData,
+    refetchOnMount: "always",
+    retry: false,
   });
 }

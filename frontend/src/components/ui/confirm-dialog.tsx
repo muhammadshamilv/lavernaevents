@@ -1,18 +1,25 @@
-import { AnimatePresence, motion } from "framer-motion";
+import type { ReactNode } from "react";
+import { AlertTriangle, HelpCircle, type LucideIcon } from "lucide-react";
 import { Button } from "./button";
+import { Modal, ModalActions } from "./modal";
 
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
-  description: string;
+  description: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   isLoading?: boolean;
   destructive?: boolean;
+  /** Replaces the default warning / question icon. */
+  icon?: LucideIcon;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
+// "Are you sure?" popup. A red warning for destructive actions, a friendly
+// question mark for everything else. While the action runs it can't be
+// dismissed, so a double tap can never fire it twice.
 export function ConfirmDialog({
   open,
   title,
@@ -21,44 +28,35 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   isLoading,
   destructive,
+  icon,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-slate-900/40"
-            onClick={onCancel}
-          />
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.98 }}
-            transition={{ duration: 0.15 }}
-            className="relative w-full max-w-sm rounded-3xl bg-white p-6 soft-shadow-lg"
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title={title}
+      description={description}
+      icon={icon ?? (destructive ? AlertTriangle : HelpCircle)}
+      tone={destructive ? "danger" : "default"}
+      size="sm"
+      align="center"
+      busy={!!isLoading}
+      footer={
+        <ModalActions className="sm:justify-center sm:[&>*]:min-w-32">
+          <Button variant="outline" onClick={onCancel} disabled={isLoading} data-autofocus={destructive ? true : undefined}>
+            {cancelLabel}
+          </Button>
+          <Button
+            onClick={onConfirm}
+            isLoading={isLoading}
+            className={destructive ? "bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500" : undefined}
           >
-            <h2 className="text-lg font-bold text-[var(--brand-navy)]">{title}</h2>
-            <p className="mt-2 text-sm text-slate-500">{description}</p>
-            <div className="mt-6 flex justify-end gap-3">
-              <Button variant="outline" onClick={onCancel} disabled={isLoading}>
-                {cancelLabel}
-              </Button>
-              <Button
-                onClick={onConfirm}
-                isLoading={isLoading}
-                className={destructive ? "bg-rose-600 hover:bg-rose-700" : undefined}
-              >
-                {confirmLabel}
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
+            {confirmLabel}
+          </Button>
+        </ModalActions>
+      }
+    />
   );
 }

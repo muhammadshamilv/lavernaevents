@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from "react-router-dom";
+import { AlertTriangle } from "lucide-react";
 import { usePortalAccess } from "@/queries/useMembershipQueries";
 import { useAuthStore } from "@/stores/auth.store";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
@@ -23,7 +24,7 @@ function PortalLayoutSkeleton() {
   return (
     <div className="gradient-mesh-subtle flex min-h-screen items-center justify-center px-4 py-16">
       <div className="w-full max-w-md">
-        <Card className="p-8 sm:p-10">
+        <Card className="p-8 sm:p-10" aria-busy="true" aria-label="Loading your portal">
           <Skeleton className="mx-auto h-4 w-32" />
           <Skeleton className="mx-auto mt-4 h-7 w-56" />
           <Skeleton className="mx-auto mt-3 h-4 w-72" />
@@ -78,8 +79,11 @@ export default function PortalLayout() {
   if (isError || !access) {
     return (
       <div className="gradient-mesh-subtle flex min-h-screen items-center justify-center px-4 py-16">
-        <Card className="max-w-md p-8 text-center">
-          <p className="text-sm text-slate-500">
+        <Card className="max-w-md p-8 text-center sm:p-10">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+            <AlertTriangle className="h-6 w-6" />
+          </span>
+          <p className="mt-4 text-sm text-slate-500">
             We couldn't check your portal access right now. Please refresh the page.
           </p>
         </Card>
@@ -100,9 +104,12 @@ export default function PortalLayout() {
 
   if (isDesktop) {
     return (
-      <div className="flex min-h-screen bg-slate-50/70">
+      <div className="flex min-h-screen bg-[linear-gradient(180deg,#faf9fc_0%,#f6f5fa_100%)]">
         <SkipLink />
-        <PortalSidebar />
+        {/* Pinned to the window: the sidebar stays put while the page scrolls. */}
+        <div className="sticky top-0 z-30 h-screen shrink-0 self-start">
+          <PortalSidebar />
+        </div>
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto focus:outline-none">
           <Outlet />
         </main>
@@ -112,7 +119,7 @@ export default function PortalLayout() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50/70">
+    <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#faf9fc_0%,#f6f5fa_100%)]">
       <SkipLink />
       <PortalTopBar />
       <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-24 focus:outline-none">

@@ -41,6 +41,7 @@ urlpatterns = [
     path("api/", include("photographers.urls")),
     path("api/", include("gallery.urls")),
     path("api/", include("qr_codes.urls")),
+    path("api/", include("reviews.urls")),
     path("api/admin-panel/", include("admin_panel.urls")),
 ]
 

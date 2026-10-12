@@ -13,7 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import logo from "@/assets/laverna-logo.png";
+import Logo from "@/components/brand/Logo";
 import { useAuthStore } from "@/stores/auth.store";
 import { useLogoutMutation } from "@/queries/useAuthQueries";
 import { cn } from "@/lib/utils";
@@ -57,10 +57,10 @@ const PRIMARY_MOBILE_TABS = ["/portal", "/portal/events"];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+    "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/40",
     isActive
-      ? "bg-[var(--brand-pink)]/8 text-[var(--brand-pink)] before:absolute before:left-0 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-[var(--brand-pink)]"
-      : "text-slate-600 hover:bg-slate-100 hover:text-[var(--brand-navy)]"
+      ? "bg-gradient-to-r from-[var(--brand-pink)]/12 to-[var(--brand-pink)]/[0.03] font-semibold text-[var(--brand-pink)] before:absolute before:left-0 before:top-1/2 before:h-6 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-[var(--brand-pink)]"
+      : "text-slate-600 hover:bg-slate-100 hover:text-[var(--brand-navy)] [@media(hover:hover)]:hover:translate-x-0.5"
   );
 
 function AccountBlock({ onNavigate }: { onNavigate?: () => void }) {
@@ -81,8 +81,8 @@ function AccountBlock({ onNavigate }: { onNavigate?: () => void }) {
         Settings
       </NavLink>
 
-      <div className="mt-3 flex items-center gap-3 rounded-xl px-3 py-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--brand-navy)] text-sm font-semibold text-white">
+      <div className="mt-3 flex items-center gap-3 rounded-2xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-100">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[image:var(--gradient-brand)] text-sm font-semibold text-white shadow-sm">
           {initial}
         </div>
         <div className="min-w-0 flex-1">
@@ -108,14 +108,15 @@ function AccountBlock({ onNavigate }: { onNavigate?: () => void }) {
 
 export function PortalSidebar() {
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-100 bg-white">
+    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-100 bg-white shadow-[1px_0_0_0_rgba(36,21,66,0.02)]">
       <div className="flex h-16 items-center border-b border-slate-100 px-6">
-        <Link to="/portal">
-          <img src={logo} alt="LavernaEvents" className="h-8 w-auto object-contain" />
+        <Link to="/portal" aria-label="LavernaEvents dashboard">
+          <Logo size="md" />
         </Link>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Portal">
+        <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Menu</p>
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end} className={navLinkClass}>
             <item.icon className="h-4 w-4" />
@@ -139,18 +140,18 @@ export function PortalTopBar() {
 
   return (
     <header
-      className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-100 bg-white/90 px-4 backdrop-blur-md"
+      className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-100 bg-white/85 px-4 backdrop-blur-xl"
       style={{ paddingTop: "var(--safe-area-inset-top)" }}
     >
-      <Link to="/portal" onClick={() => setMenuOpen(false)}>
-        <img src={logo} alt="LavernaEvents" className="h-7 w-auto object-contain" />
+      <Link to="/portal" onClick={() => setMenuOpen(false)} aria-label="LavernaEvents dashboard">
+        <Logo size="sm" />
       </Link>
 
       <div className="relative">
         <button
           type="button"
           onClick={() => setMenuOpen((prev) => !prev)}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-navy)] text-sm font-semibold text-white"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-[image:var(--gradient-brand)] text-sm font-semibold text-white shadow-sm ring-2 ring-white transition-transform active:scale-95"
           aria-label="Account menu"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -170,7 +171,7 @@ export function PortalTopBar() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-11 z-50 w-56 overflow-hidden rounded-2xl border border-slate-100 bg-white soft-shadow-lg p-1.5"
+                className="absolute right-0 top-11 z-50 w-60 overflow-hidden rounded-2xl border border-slate-100 bg-white p-1.5 soft-shadow-lg"
               >
                 <AccountBlock onNavigate={() => setMenuOpen(false)} />
               </motion.div>
@@ -203,7 +204,7 @@ export function PortalBottomNav() {
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-slate-100 bg-white/95 px-2 pt-2 backdrop-blur-md"
+        className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around gap-1 border-t border-slate-100 bg-white/90 px-3 pt-2 shadow-[0_-8px_24px_-12px_rgba(36,21,66,0.12)] backdrop-blur-xl"
         style={{ paddingBottom: "calc(0.5rem + var(--safe-area-inset-bottom))" }}
       >
         {NAV_ITEMS.filter((item) => PRIMARY_MOBILE_TABS.includes(item.to)).map((item) => (
@@ -213,7 +214,7 @@ export function PortalBottomNav() {
             end={item.end}
             className={({ isActive }) =>
               cn(
-                "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-xs font-medium transition-all duration-200",
+                "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1.5 text-[11px] font-semibold transition-all duration-200 active:scale-95",
                 isActive
                   ? "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]"
                   : "text-slate-400 hover:text-slate-600"
@@ -231,7 +232,7 @@ export function PortalBottomNav() {
           aria-haspopup="dialog"
           aria-expanded={moreOpen}
           className={cn(
-            "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-xs font-medium transition-all duration-200",
+            "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1.5 text-[11px] font-semibold transition-all duration-200 active:scale-95",
             onSecondaryPage
               ? "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]"
               : "text-slate-400 hover:text-slate-600"
@@ -250,7 +251,7 @@ export function PortalBottomNav() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-50 bg-[var(--brand-navy)]/30 backdrop-blur-[2px]"
+              className="fixed inset-0 z-50 bg-[var(--brand-navy)]/40 backdrop-blur-sm"
               onClick={() => setMoreOpen(false)}
             />
             <motion.div
@@ -261,7 +262,7 @@ export function PortalBottomNav() {
               role="dialog"
               aria-modal="true"
               aria-label="More"
-              className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white p-4"
+              className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-[2rem] bg-white p-4 shadow-[0_-20px_50px_-20px_rgba(36,21,66,0.35)]"
               style={{ paddingBottom: "calc(1.25rem + var(--safe-area-inset-bottom))" }}
             >
               <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-slate-200" />
@@ -287,10 +288,10 @@ export function PortalBottomNav() {
                     onClick={() => setMoreOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        "flex flex-col items-center gap-2 rounded-2xl border p-3.5 text-xs font-semibold transition-colors",
+                        "flex flex-col items-center gap-2 rounded-2xl border p-3.5 text-xs font-semibold transition-all active:scale-95",
                         isActive
-                          ? "border-[var(--brand-pink)]/20 bg-[var(--brand-pink)]/8 text-[var(--brand-pink)]"
-                          : "border-slate-100 text-slate-600 hover:bg-slate-50"
+                          ? "border-[var(--brand-pink)]/25 bg-[var(--brand-pink)]/8 text-[var(--brand-pink)] shadow-sm"
+                          : "border-slate-100 bg-slate-50/60 text-slate-600 hover:bg-slate-100"
                       )
                     }
                   >

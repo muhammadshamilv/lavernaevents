@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   CalendarPlus,
-  ChevronLeft,
   ChevronRight,
   Image as ImageIcon,
   Search,
@@ -12,6 +11,7 @@ import { useEvents } from "@/queries/useEventQueries";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeader, PageNav, fieldClass } from "@/components/portal/PortalUI";
 import { eventTypeLabel, formatEventDate } from "@/lib/eventDisplay";
 import { resolveMediaUrl } from "@/lib/media";
 
@@ -40,17 +40,15 @@ export default function GuestsHub() {
   return (
     <div className="mobile-safe-bottom px-4 py-8 sm:px-6 sm:py-10 lg:px-10">
       <div className="mx-auto max-w-3xl">
-        <p className="text-sm font-semibold uppercase tracking-wide text-[var(--brand-pink)]">
-          Guests
-        </p>
-        <h1 className="mt-2 text-2xl font-bold text-[var(--brand-navy)] sm:text-3xl">
-          Select an event to manage its guests
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Every guest list belongs to a specific event - pick one below.
-        </p>
+        <PageHeader
+          eyebrow="Guests"
+          icon={Users}
+          title="Select an event to manage its guests"
+          description="Every guest list belongs to a specific event - pick one below."
+          className="[&_h1]:whitespace-normal"
+        />
 
-        <div className="relative mt-5">
+        <div className="relative mt-6">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             type="search"
@@ -58,12 +56,12 @@ export default function GuestsHub() {
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search your events"
             aria-label="Search events"
-            className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-[var(--brand-navy)] placeholder:text-slate-400 focus:border-[var(--brand-pink)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-pink)]/40"
+            className={`${fieldClass} h-12 pl-11 pr-4 shadow-sm`}
           />
         </div>
 
         {isError && (
-          <p className="mt-10 text-center text-sm text-rose-600">
+          <p className="mt-10 rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-600">
             Couldn't load your events right now. Please refresh the page.
           </p>
         )}
@@ -72,7 +70,7 @@ export default function GuestsHub() {
           <div className="mt-6 space-y-3">
             {Array.from({ length: 3 }).map((_, index) => (
               <Card key={index} className="flex items-center gap-3 p-4">
-                <Skeleton className="h-12 w-12 rounded-xl" />
+                <Skeleton className="h-14 w-14 rounded-2xl" />
                 <div className="flex-1 space-y-2">
                   <Skeleton className="h-4 w-40" />
                   <Skeleton className="h-3 w-24" />
@@ -90,8 +88,8 @@ export default function GuestsHub() {
 
         {!isLoading && !isError && events.length === 0 && !search && (
           <Card className="mt-8 p-10 text-center">
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
-              <CalendarPlus className="h-6 w-6" />
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+              <CalendarPlus className="h-7 w-7" />
             </span>
             <p className="mt-4 font-semibold text-[var(--brand-navy)]">No events yet</p>
             <p className="mt-1 text-sm text-slate-500">
@@ -112,9 +110,13 @@ export default function GuestsHub() {
               const coverUrl = resolveMediaUrl(event.cover_image);
 
               return (
-                <Link key={event.id} to={`/portal/events/${event.id}/guests`} className="block">
-                  <Card className="card-hover-lift flex items-center gap-3 p-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+                <Link
+                  key={event.id}
+                  to={`/portal/events/${event.id}/guests`}
+                  className="group block rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/40"
+                >
+                  <Card className="card-hover-lift flex items-center gap-3.5 p-3.5 sm:p-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-100">
                       {coverUrl ? (
                         <img src={coverUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
@@ -129,9 +131,10 @@ export default function GuestsHub() {
                         {eventTypeLabel(event.event_type, event.custom_event_type_label)} · {formatEventDate(event.event_date)}
                       </p>
                     </div>
-                    <span className="flex items-center gap-1.5 shrink-0 text-sm font-medium text-[var(--brand-pink)]">
-                      <Users className="h-4 w-4" />
-                      <ChevronRight className="h-4 w-4" />
+                    <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--brand-pink)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--brand-pink)] transition-colors [@media(hover:hover)]:group-hover:bg-[var(--brand-pink)] [@media(hover:hover)]:group-hover:text-white">
+                      <Users className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Guests</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
                     </span>
                   </Card>
                 </Link>
@@ -141,31 +144,14 @@ export default function GuestsHub() {
         )}
 
         {pagination && pagination.total_pages > 1 && (
-          <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
-            <span>
-              Page {pagination.current_page} of {pagination.total_pages}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                disabled={!pagination.previous}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((prev) => prev + 1)}
-                disabled={!pagination.next}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Next page"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+          <PageNav
+            className="mt-5"
+            label={`Page ${pagination.current_page} of ${pagination.total_pages}`}
+            onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+            onNext={() => setPage((prev) => prev + 1)}
+            canPrev={!!pagination.previous}
+            canNext={!!pagination.next}
+          />
         )}
       </div>
     </div>

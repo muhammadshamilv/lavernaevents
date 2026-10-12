@@ -1,6 +1,7 @@
-import { AlertTriangle, CalendarDays, HardDrive, IndianRupee, Users } from "lucide-react";
+import { Activity, AlertTriangle, CalendarDays, HardDrive, IndianRupee, LayoutDashboard, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/portal/PortalUI";
 import { useAdminDashboardStats } from "@/queries/useAdminQueries";
 import type { AdminChannelUsage } from "@/types/admin.types";
 
@@ -13,17 +14,22 @@ interface StatTileProps {
 
 function StatTile({ label, value, icon: Icon, accent }: StatTileProps) {
   return (
-    <Card className="p-5">
-      <div className="flex items-center gap-3">
+    <Card className="card-hover-lift relative overflow-hidden p-5">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-[0.07]"
+        style={{ backgroundColor: accent }}
+      />
+      <div className="flex items-center gap-4">
         <div
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl"
           style={{ backgroundColor: `${accent}1a`, color: accent }}
         >
-          <Icon className="h-5 w-5" />
+          <Icon className="h-6 w-6" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-slate-500">{label}</p>
-          <p className="truncate text-xl font-bold text-[var(--brand-navy)]">{value}</p>
+          <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+          <p className="mt-0.5 truncate text-2xl font-bold tracking-tight text-[var(--brand-navy)]">{value}</p>
         </div>
       </div>
     </Card>
@@ -73,8 +79,11 @@ function ChannelPoolCard({ usage }: { usage: AdminChannelUsage[] }) {
 
   return (
     <Card className="p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-bold text-[var(--brand-navy)]">Platform Channel Capacity</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 font-bold text-[var(--brand-navy)]">
+          <Activity className="h-4 w-4 text-[var(--brand-pink)]" />
+          Platform Channel Capacity
+        </h2>
         {anyWarning && (
           <span className="flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">
             <AlertTriangle className="h-3.5 w-3.5" />
@@ -90,16 +99,16 @@ function ChannelPoolCard({ usage }: { usage: AdminChannelUsage[] }) {
               ? Math.min((pool.used / pool.total_capacity) * 100, 100)
               : 0;
 
-          const barColor = pool.is_exhausted
-            ? "#dc2626"
+          const barClass = pool.is_exhausted
+            ? "bg-rose-600"
             : pool.is_low
-              ? "#d97706"
-              : "#0f766e";
+              ? "bg-amber-500"
+              : "bg-[image:var(--gradient-brand)]";
 
           return (
             <div
               key={pool.channel}
-              className={`rounded-2xl border p-3 ${
+              className={`rounded-2xl border p-3.5 ${
                 pool.is_exhausted
                   ? "border-rose-200 bg-rose-50"
                   : pool.is_low
@@ -122,10 +131,10 @@ function ChannelPoolCard({ usage }: { usage: AdminChannelUsage[] }) {
                   </span>
                 )}
               </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="mt-2.5 h-2.5 w-full overflow-hidden rounded-full bg-white ring-1 ring-slate-200">
                 <div
-                  className="h-full rounded-full transition-all"
-                  style={{ width: `${pct}%`, backgroundColor: barColor }}
+                  className={`h-full rounded-full transition-all duration-700 ${barClass}`}
+                  style={{ width: `${pct}%` }}
                 />
               </div>
               <p className="mt-2 text-xs text-slate-500">
@@ -145,16 +154,17 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">Admin Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Platform-wide overview across all organizers and photographers.
-        </p>
-      </div>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Admin"
+        icon={LayoutDashboard}
+        title="Admin Dashboard"
+        description="Platform-wide overview across all organizers and photographers."
+      />
 
       {isError && (
-        <Card className="mb-6 p-6 text-center">
-          <p className="text-sm text-slate-500">
+        <Card className="mb-6 bg-rose-50/60 p-6 text-center ring-1 ring-rose-100">
+          <p className="text-sm text-rose-600">
             We couldn't load dashboard stats right now. Please refresh the page.
           </p>
         </Card>

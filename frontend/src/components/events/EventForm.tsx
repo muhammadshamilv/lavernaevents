@@ -3,8 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { isAxiosError } from "axios";
-import { AlertTriangle, ImagePlus, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileText, ImagePlus, MapPin, PartyPopper, X, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Card, FormError } from "@/components/ui/card";
+import { BackLink } from "@/components/portal/PortalUI";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -221,7 +223,7 @@ export default function EventForm({ existingEvent }: EventFormProps) {
 
   const textareaClass = (hasError: boolean) =>
     cn(
-      "w-full rounded-2xl border bg-white px-4 py-3 text-sm text-[var(--brand-navy)] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--brand-pink)]/40",
+      "w-full rounded-2xl border bg-white px-4 py-3 text-base text-[var(--brand-navy)] placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-pink)]/30 sm:text-sm",
       hasError
         ? "border-rose-300 focus:ring-rose-300/40"
         : "border-slate-200 focus:border-[var(--brand-pink)]"
@@ -229,12 +231,12 @@ export default function EventForm({ existingEvent }: EventFormProps) {
 
   const coverField = (previewSize: "sm" | "lg", twoCol: boolean) => (
     <div className={cn("space-y-1.5", twoCol && "col-span-2")}>
-      <Label htmlFor="cover_image">Cover image</Label>
+      <Label htmlFor="cover_image">Cover image (optional)</Label>
       <div className="flex flex-wrap items-center gap-3 sm:gap-4">
         <div
           className={cn(
-            "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-200 bg-slate-50",
-            previewSize === "lg" ? "h-20 w-32" : "h-16 w-24"
+            "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50",
+            previewSize === "lg" ? "h-24 w-40" : "h-20 w-28"
           )}
         >
           {previewUrl ? (
@@ -297,162 +299,214 @@ export default function EventForm({ existingEvent }: EventFormProps) {
     </>
   );
 
-  // Renders the field set once, parameterized by breakpoint - only ONE of
-  // these calls happens per render (see the isDesktop branch below), so
-  // register("field") is only ever called once per field name at a time.
-  const fields = (twoCol: boolean) => (
-    <>
-      <div className={twoCol ? "col-span-2 space-y-1.5" : "space-y-1.5"}>
-        <Label htmlFor="name">Event name</Label>
-        <Input
-          id="name"
-          placeholder="Anjali & Rohan's Wedding"
-          hasError={!!errors.name}
-          {...register("name")}
-        />
-        <FormError message={errors.name?.message} />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="event_type">Event type</Label>
-        <Select id="event_type" hasError={!!errors.event_type} {...register("event_type")}>
-          {EVENT_TYPE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-        <FormError message={errors.event_type?.message} />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="status">Status</Label>
-        <Select id="status" hasError={!!errors.status} {...register("status")}>
-          {statusOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-        <FormError message={errors.status?.message} />
-      </div>
-
-      {eventType === "CUSTOM" && (
-        <div className={twoCol ? "col-span-2 space-y-1.5" : "space-y-1.5"}>
-          <Label htmlFor="custom_event_type_label">Custom event type label</Label>
-          <Input
-            id="custom_event_type_label"
-            placeholder="e.g. Baby Shower"
-            hasError={!!errors.custom_event_type_label}
-            {...register("custom_event_type_label")}
-          />
-          <FormError message={errors.custom_event_type_label?.message} />
+  // Each group of fields is its own section card. Only ONE of these trees
+  // is mounted at a time (see the isDesktop branch below), so register("field")
+  // is still called once per field name.
+  const section = (icon: LucideIcon, title: string, hint: string, body: ReactNode, twoCol: boolean) => {
+    const Icon = icon;
+    return (
+      <Card className="overflow-hidden rounded-[1.75rem] p-5 sm:p-7">
+        <div className="mb-5 flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+            <Icon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-[var(--brand-navy)]">{title}</h2>
+            <p className="text-xs text-slate-500">{hint}</p>
+          </div>
         </div>
-      )}
+        <div className={twoCol ? "grid grid-cols-2 gap-5" : "space-y-4"}>{body}</div>
+      </Card>
+    );
+  };
 
-      <div className="space-y-1.5">
-        <Label htmlFor="host_name">Host name</Label>
-        <Input
-          id="host_name"
-          placeholder="Defaults to your name if left blank"
-          hasError={!!errors.host_name}
-          {...register("host_name")}
-        />
-        <FormError message={errors.host_name?.message} />
+  const sections = (twoCol: boolean) => {
+    const wide = twoCol ? "col-span-2 space-y-1.5" : "space-y-1.5";
+
+    return (
+      <div className="space-y-5">
+        {section(
+          PartyPopper,
+          "The basics",
+          "What you're celebrating and who's hosting.",
+          <>
+            <div className={wide}>
+              <Label htmlFor="name">Event name</Label>
+              <Input
+                id="name"
+                placeholder="Anjali & Rohan's Wedding"
+                hasError={!!errors.name}
+                {...register("name")}
+              />
+              <FormError message={errors.name?.message} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="event_type">Event type</Label>
+              <Select id="event_type" hasError={!!errors.event_type} {...register("event_type")}>
+                {EVENT_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <FormError message={errors.event_type?.message} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="status">Status</Label>
+              <Select id="status" hasError={!!errors.status} {...register("status")}>
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <FormError message={errors.status?.message} />
+            </div>
+
+            {eventType === "CUSTOM" && (
+              <div className={wide}>
+                <Label htmlFor="custom_event_type_label">Custom event type label</Label>
+                <Input
+                  id="custom_event_type_label"
+                  placeholder="e.g. Baby Shower"
+                  hasError={!!errors.custom_event_type_label}
+                  {...register("custom_event_type_label")}
+                />
+                <FormError message={errors.custom_event_type_label?.message} />
+              </div>
+            )}
+
+            <div className={wide}>
+              <Label htmlFor="host_name">Host name</Label>
+              <Input
+                id="host_name"
+                placeholder="Defaults to your name if left blank"
+                hasError={!!errors.host_name}
+                {...register("host_name")}
+              />
+              <FormError message={errors.host_name?.message} />
+            </div>
+          </>,
+          twoCol
+        )}
+
+        {section(
+          CalendarClock,
+          "Date and time",
+          "When guests should arrive.",
+          <>
+            <div className={wide}>
+              <Label htmlFor="event_date">Event date</Label>
+              <Input
+                id="event_date"
+                type="date"
+                min={isEditMode ? undefined : localToday()}
+                hasError={!!errors.event_date}
+                {...register("event_date")}
+              />
+              <FormError message={errors.event_date?.message} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="event_time">Start time</Label>
+              <Input id="event_time" type="time" hasError={!!errors.event_time} {...register("event_time")} />
+              <FormError message={errors.event_time?.message} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="event_end_time">End time (optional)</Label>
+              <Input id="event_end_time" type="time" hasError={!!errors.event_end_time} {...register("event_end_time")} />
+              <FormError message={errors.event_end_time?.message} />
+            </div>
+
+            <p className={cn("text-xs text-slate-400", twoCol && "col-span-2")}>
+              Guests will see the time as a range, e.g. 7:00 PM - 10:00 PM.
+            </p>
+          </>,
+          twoCol
+        )}
+
+        {section(
+          MapPin,
+          "Venue",
+          "Where it's happening, so guests can find it.",
+          <>
+            <div className={wide}>
+              <Label htmlFor="venue_name">Venue name</Label>
+              <Input
+                id="venue_name"
+                placeholder="The Grand Meridian"
+                hasError={!!errors.venue_name}
+                {...register("venue_name")}
+              />
+              <FormError message={errors.venue_name?.message} />
+            </div>
+
+            <div className={wide}>
+              <Label htmlFor="google_maps_link">Google Maps link</Label>
+              <Input
+                id="google_maps_link"
+                type="url"
+                inputMode="url"
+                placeholder="https://maps.google.com/..."
+                hasError={!!errors.google_maps_link}
+                {...register("google_maps_link")}
+              />
+              <FormError message={errors.google_maps_link?.message} />
+            </div>
+
+            <div className={wide}>
+              <Label htmlFor="address">Address</Label>
+              <textarea
+                id="address"
+                rows={2}
+                className={textareaClass(!!errors.address)}
+                placeholder="Street, city, state"
+                {...register("address")}
+              />
+              <FormError message={errors.address?.message} />
+            </div>
+          </>,
+          twoCol
+        )}
+
+        {section(
+          FileText,
+          "Details",
+          "A short note and a cover picture for your event.",
+          <>
+            <div className={wide}>
+              <Label htmlFor="description">Description</Label>
+              <textarea
+                id="description"
+                rows={3}
+                className={textareaClass(!!errors.description)}
+                placeholder="Tell guests a little about this event"
+                {...register("description")}
+              />
+              <FormError message={errors.description?.message} />
+            </div>
+
+            {coverField(twoCol ? "lg" : "sm", twoCol)}
+          </>,
+          twoCol
+        )}
       </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="venue_name">Venue name</Label>
-        <Input
-          id="venue_name"
-          placeholder="The Grand Meridian"
-          hasError={!!errors.venue_name}
-          {...register("venue_name")}
-        />
-        <FormError message={errors.venue_name?.message} />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="event_date">Event date</Label>
-        <Input
-          id="event_date"
-          type="date"
-          min={isEditMode ? undefined : localToday()}
-          hasError={!!errors.event_date}
-          {...register("event_date")}
-        />
-        <FormError message={errors.event_date?.message} />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="event_time">Start time</Label>
-        <Input
-          id="event_time"
-          type="time"
-          hasError={!!errors.event_time}
-          {...register("event_time")}
-        />
-        <FormError message={errors.event_time?.message} />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="event_end_time">End time (optional)</Label>
-        <Input
-          id="event_end_time"
-          type="time"
-          hasError={!!errors.event_end_time}
-          {...register("event_end_time")}
-        />
-        <p className="text-xs text-slate-400">
-          Guests will see the time as a range, e.g. 7:00 PM - 10:00 PM.
-        </p>
-        <FormError message={errors.event_end_time?.message} />
-      </div>
-
-      <div className={twoCol ? "col-span-2 space-y-1.5" : "space-y-1.5"}>
-        <Label htmlFor="google_maps_link">Google Maps link</Label>
-        <Input
-          id="google_maps_link"
-          type="url"
-          inputMode="url"
-          placeholder="https://maps.google.com/..."
-          hasError={!!errors.google_maps_link}
-          {...register("google_maps_link")}
-        />
-        <FormError message={errors.google_maps_link?.message} />
-      </div>
-
-      <div className={twoCol ? "col-span-2 space-y-1.5" : "space-y-1.5"}>
-        <Label htmlFor="address">Address</Label>
-        <textarea
-          id="address"
-          rows={2}
-          className={textareaClass(!!errors.address)}
-          placeholder="Street, city, state"
-          {...register("address")}
-        />
-        <FormError message={errors.address?.message} />
-      </div>
-
-      <div className={twoCol ? "col-span-2 space-y-1.5" : "space-y-1.5"}>
-        <Label htmlFor="description">Description</Label>
-        <textarea
-          id="description"
-          rows={3}
-          className={textareaClass(!!errors.description)}
-          placeholder="Tell guests a little about this event"
-          {...register("description")}
-        />
-        <FormError message={errors.description?.message} />
-      </div>
-
-      {coverField(twoCol ? "lg" : "sm", twoCol)}
-    </>
-  );
+    );
+  };
 
   return (
     <div className="mobile-safe-bottom mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-      <h1 className="text-xl font-bold text-[var(--brand-navy)] lg:text-2xl">
+      <BackLink to={isEditMode ? `/portal/events/${existingEvent.id}` : "/portal/events"}>
+        {isEditMode ? "Back to event" : "Back to events"}
+      </BackLink>
+
+      <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--brand-pink)]">
+        {isEditMode ? "Edit" : "New event"}
+      </p>
+      <h1 className="text-2xl font-bold tracking-tight text-[var(--brand-navy)] lg:text-3xl">
         {isEditMode ? "Edit event" : "Create a new event"}
       </h1>
       <p className="mt-1 text-sm text-slate-500">
@@ -462,30 +516,28 @@ export default function EventForm({ existingEvent }: EventFormProps) {
       </p>
 
       {isDesktop ? (
-        <Card className="mt-8 p-8">
-          <form className="space-y-6" onSubmit={handleSubmit(onSubmit)} noValidate>
-            <div className="grid grid-cols-2 gap-5">{fields(true)}</div>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)} noValidate>
+          {sections(true)}
 
-            {statusBlock}
+          {statusBlock}
 
-            <div className="flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate(-1)}
-                disabled={activeMutation.isPending}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" isLoading={activeMutation.isPending}>
-                {isEditMode ? "Save changes" : "Create event"}
-              </Button>
-            </div>
-          </form>
-        </Card>
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate(-1)}
+              disabled={activeMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={activeMutation.isPending}>
+              {isEditMode ? "Save changes" : "Create event"}
+            </Button>
+          </div>
+        </form>
       ) : (
         <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
-          {fields(false)}
+          {sections(false)}
 
           {statusBlock}
 

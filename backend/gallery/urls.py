@@ -1,9 +1,16 @@
 from django.urls import path
 
-from .views import EventFaceScanView, EventGalleryView, GalleryMediaDetailView
+from .views import (
+    EventFaceScanView,
+    EventGalleryView,
+    GalleryMediaDetailView,
+    GalleryOverviewView,
+)
 
 
 urlpatterns = [
+    # The organizer's Gallery hub (all events at a glance).
+    path("gallery/overview/", GalleryOverviewView.as_view(), name="gallery-overview"),
     path(
         "events/<int:event_pk>/gallery/",
         EventGalleryView.as_view(),

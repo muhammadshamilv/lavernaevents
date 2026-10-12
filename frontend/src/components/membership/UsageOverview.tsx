@@ -26,9 +26,9 @@ function QuotaBar({
 
   return (
     <div>
-      <div className="flex items-baseline justify-between text-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
         <span className="font-medium text-[var(--brand-navy)]">{label}</span>
-        <span className="text-slate-500">
+        <span className="text-xs text-slate-500 sm:text-sm">
           {isUnlimited
             ? "Unlimited"
             : `${used ?? 0} / ${total} used${remaining !== null ? ` · ${remaining} left` : ""}`}
@@ -41,10 +41,10 @@ function QuotaBar({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(percentUsed)}
-          className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100"
+          className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-100"
         >
           <div
-            className={`h-full rounded-full transition-all ${nearlyOut ? "bg-rose-500" : "bg-[var(--brand-pink)]"}`}
+            className={`h-full rounded-full transition-all duration-700 ${nearlyOut ? "bg-rose-500" : "bg-[image:var(--gradient-brand)]"}`}
             style={{ width: `${percentUsed}%` }}
           />
         </div>
@@ -72,7 +72,7 @@ export default function UsageOverview() {
 
   if (isError || !usage) {
     return (
-      <Card className="p-5 text-sm text-slate-500">
+      <Card className="p-5 text-sm text-slate-500 ring-1 ring-rose-100">
         Couldn't load your usage summary right now.
       </Card>
     );
@@ -81,7 +81,7 @@ export default function UsageOverview() {
   if (!usage.has_active_plan) {
     return (
       <Card className="p-5">
-        <p className="text-sm text-slate-500">
+        <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
           You don't have an active membership plan yet. Choose a plan to start
           sending invitations.
         </p>
@@ -91,7 +91,7 @@ export default function UsageOverview() {
 
   return (
     <Card className="space-y-5 p-5">
-      <div>
+      <div className="border-b border-slate-100 pb-4">
         <h3 className="text-base font-semibold text-[var(--brand-navy)]">
           {usage.plan_name} plan usage
         </h3>
@@ -100,7 +100,7 @@ export default function UsageOverview() {
         </p>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         <QuotaBar
           label="Invitations"
           used={usage.invitations_used}
@@ -124,27 +124,27 @@ export default function UsageOverview() {
       </div>
 
       <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-4">
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+        <span className="rounded-full bg-[var(--brand-navy)]/[0.06] px-2.5 py-1 text-[11px] font-medium text-[var(--brand-navy)]/70">
           Guests: {usage.guest_limit ?? "Unlimited"}
         </span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+        <span className="rounded-full bg-[var(--brand-navy)]/[0.06] px-2.5 py-1 text-[11px] font-medium text-[var(--brand-navy)]/70">
           Events: {usage.event_limit ?? "Unlimited"}
         </span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+        <span className="rounded-full bg-[var(--brand-navy)]/[0.06] px-2.5 py-1 text-[11px] font-medium text-[var(--brand-navy)]/70">
           Storage: {usage.storage_limit_mb != null ? `${usage.storage_limit_mb} MB` : "Unlimited"}
         </span>
         {usage.gallery_enabled && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+          <span className="rounded-full bg-[var(--brand-navy)]/[0.06] px-2.5 py-1 text-[11px] font-medium text-[var(--brand-navy)]/70">
             Gallery
           </span>
         )}
         {usage.qr_code_enabled && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+          <span className="rounded-full bg-[var(--brand-navy)]/[0.06] px-2.5 py-1 text-[11px] font-medium text-[var(--brand-navy)]/70">
             QR Code
           </span>
         )}
         {usage.photographer_access_enabled && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+          <span className="rounded-full bg-[var(--brand-navy)]/[0.06] px-2.5 py-1 text-[11px] font-medium text-[var(--brand-navy)]/70">
             Photographer Access
           </span>
         )}

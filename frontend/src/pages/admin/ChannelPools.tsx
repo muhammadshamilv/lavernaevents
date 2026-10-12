@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AlertTriangle, History, PlusCircle } from "lucide-react";
+import { AlertTriangle, History, PlusCircle, Radio } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/portal/PortalUI";
 import AdminDialog, { DialogActions } from "@/components/admin/AdminDialog";
 import { getApiErrorMessage, getApiFieldErrors } from "@/lib/apiError";
 import { toastStore } from "@/stores/toast.store";
@@ -88,6 +89,7 @@ function TopupFormDialog({ pool, onClose }: { pool: PlatformChannelPool; onClose
   return (
     <AdminDialog
       title={pool.is_configured ? "Top up channel pool" : "Set up channel pool"}
+      icon={PlusCircle}
       description="Adds to the platform-wide capacity of this channel. This is separate from any organizer's own plan quota."
       onClose={onClose}
     >
@@ -145,7 +147,7 @@ function HistoryDialog({ channel, onClose }: { channel: InvitationChannelKey; on
   const { data: history, isLoading, isError } = useAdminChannelPoolTopupHistory(channel);
 
   return (
-    <AdminDialog title="Topup history" description="The 50 most recent top-ups for this channel." onClose={onClose} size="lg">
+    <AdminDialog title="Topup history" description="The 50 most recent top-ups for this channel." icon={History} onClose={onClose} size="lg">
       <div className="mt-3 space-y-2">
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)
@@ -153,9 +155,9 @@ function HistoryDialog({ channel, onClose }: { channel: InvitationChannelKey; on
           <p className="py-6 text-center text-sm text-rose-600">Couldn't load the history.</p>
         ) : history && history.length > 0 ? (
           history.map((entry) => (
-            <div key={entry.id} className="rounded-xl border border-slate-100 p-3">
+            <div key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-[var(--brand-navy)]">+{entry.amount.toLocaleString()}</p>
+                <p className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-sm font-semibold text-emerald-700">+{entry.amount.toLocaleString()}</p>
                 <p className="text-xs text-slate-400">{new Date(entry.created_at).toLocaleString("en-IN")}</p>
               </div>
               {entry.note && <p className="mt-1 break-words text-sm text-slate-500">{entry.note}</p>}
@@ -186,10 +188,10 @@ function PoolCard({
   onHistory: () => void;
 }) {
   const percent = pool.total_capacity > 0 ? Math.min((pool.used / pool.total_capacity) * 100, 100) : 0;
-  const barColor = pool.is_exhausted ? "#dc2626" : pool.is_low ? "#d97706" : "#0f766e";
+  const barClass = pool.is_exhausted ? "bg-rose-600" : pool.is_low ? "bg-amber-500" : "bg-[image:var(--gradient-brand)]";
 
   return (
-    <Card className="flex flex-col p-5">
+    <Card className="card-hover-lift flex flex-col p-5">
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-bold text-[var(--brand-navy)]">{pool.channel_display}</h3>
         {!pool.is_configured ? (
@@ -217,12 +219,12 @@ function PoolCard({
             aria-valuemax={100}
             aria-valuenow={Math.round(percent)}
             aria-label={`${pool.channel_display} capacity used`}
-            className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-slate-200"
+            className="mt-4 h-3 w-full overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-100"
           >
-            <div className="h-full rounded-full transition-all" style={{ width: `${percent}%`, backgroundColor: barColor }} />
+            <div className={`h-full rounded-full transition-all duration-700 ${barClass}`} style={{ width: `${percent}%` }} />
           </div>
 
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
+          <div className="mt-3 grid grid-cols-3 gap-2 rounded-2xl bg-slate-50/70 p-2.5 text-center text-sm">
             <div>
               <p className="font-bold text-[var(--brand-navy)]">{pool.total_capacity.toLocaleString()}</p>
               <p className="text-xs text-slate-400">Capacity</p>
@@ -242,7 +244,7 @@ function PoolCard({
           </p>
         </>
       ) : (
-        <p className="mt-4 flex-1 text-sm text-slate-500">
+        <p className="mt-4 flex-1 rounded-2xl bg-slate-50 p-3 text-sm text-slate-500">
           No limit is applied to this channel yet, so sends are never blocked. Top it up to start tracking capacity.
         </p>
       )}
@@ -268,16 +270,16 @@ export default function ChannelPools() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">Platform Channel Pools</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Every send on a channel, whatever the organizer or plan, is counted against that channel's platform-wide pool.
-          An exhausted pool blocks the channel for everyone until it's topped up.
-        </p>
-      </div>
+      <PageHeader
+        className="mb-6 items-start [&_p]:max-w-3xl"
+        eyebrow="Admin"
+        icon={Radio}
+        title="Platform Channel Pools"
+        description="Every send on a channel, whatever the organizer or plan, is counted against that channel's platform-wide pool. An exhausted pool blocks the channel for everyone until it's topped up."
+      />
 
       {isError ? (
-        <Card className="p-8 text-center text-sm text-slate-500">
+        <Card className="bg-rose-50/60 p-8 text-center text-sm text-rose-600 ring-1 ring-rose-100">
           We couldn't load channel pools right now. Please refresh the page.
         </Card>
       ) : isLoading ? (

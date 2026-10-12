@@ -1,12 +1,13 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Camera, CheckCircle2, UserRound } from "lucide-react";
+import { Camera, CheckCircle2, KeyRound, ShieldCheck, UserRound } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { IconChip, PageHeader } from "@/components/portal/PortalUI";
 import {
   changePasswordSchema,
   profileSchema,
@@ -24,7 +25,7 @@ const MAX_IMAGE_MB = 5;
 
 function SuccessNote({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+    <div role="status" className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
       <CheckCircle2 className="h-4 w-4 shrink-0" />
       {message}
     </div>
@@ -99,12 +100,17 @@ function ProfileCard() {
 
   return (
     <Card className="p-5 sm:p-6">
-      <h2 className="text-lg font-bold text-[var(--brand-navy)]">Profile</h2>
-      <p className="mt-1 text-sm text-slate-500">Your name and photo.</p>
+      <div className="flex items-center gap-3">
+        <IconChip icon={UserRound} accent="pink" />
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-[var(--brand-navy)]">Profile</h2>
+          <p className="text-sm text-slate-500">Your name and photo.</p>
+        </div>
+      </div>
 
       <form className="mt-6 space-y-5" onSubmit={handleSubmit(onSubmit)} noValidate>
         <div className="flex items-center gap-4">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400 ring-4 ring-white shadow-lg shadow-[var(--brand-navy)]/10">
             {avatar ? (
               <img src={avatar} alt="Profile" className="h-full w-full object-cover" />
             ) : (
@@ -115,7 +121,7 @@ function ProfileCard() {
           <div className="min-w-0">
             <label
               htmlFor="profile_image"
-              className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-[var(--brand-navy)] hover:bg-slate-50"
+              className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[var(--brand-navy)] transition-all active:scale-95 hover:border-[var(--brand-pink)]/40 hover:bg-slate-50 focus-within:ring-2"
             >
               <Camera className="h-4 w-4" />
               Change photo
@@ -146,13 +152,13 @@ function ProfileCard() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="min-w-0 space-y-1.5">
             <Label>Mobile number</Label>
-            <p className="truncate rounded-2xl bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+            <p className="truncate rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
               {user?.mobile_number}
             </p>
           </div>
           <div className="min-w-0 space-y-1.5">
             <Label>Email</Label>
-            <p className="truncate rounded-2xl bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+            <p className="truncate rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
               {user?.email}
             </p>
           </div>
@@ -209,10 +215,15 @@ function PasswordCard() {
 
   return (
     <Card className="p-5 sm:p-6">
-      <h2 className="text-lg font-bold text-[var(--brand-navy)]">Change password</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        You'll stay signed in here; other devices will be signed out.
-      </p>
+      <div className="flex items-center gap-3">
+        <IconChip icon={KeyRound} accent="navy" />
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-[var(--brand-navy)]">Change password</h2>
+          <p className="text-sm text-slate-500">
+            You'll stay signed in here; other devices will be signed out.
+          </p>
+        </div>
+      </div>
 
       <form className="mt-6 space-y-5" onSubmit={handleSubmit(onSubmit)} noValidate>
         <div className="space-y-1.5">
@@ -269,10 +280,12 @@ function PasswordCard() {
 export default function AccountSettings() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-      <h1 className="text-2xl font-bold text-[var(--brand-navy)]">Account settings</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Manage your profile and sign-in details.
-      </p>
+      <PageHeader
+        eyebrow="Account"
+        icon={ShieldCheck}
+        title="Account settings"
+        description="Manage your profile and sign-in details."
+      />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2 lg:items-start">
         <ProfileCard />

@@ -86,6 +86,7 @@ INSTALLED_APPS = [
     "dashboard",
     "qr_codes",
     "admin_panel",
+    "reviews",
 ]
 
 # --------------------------------------------------

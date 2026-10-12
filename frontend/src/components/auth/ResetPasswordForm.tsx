@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LockKeyhole } from "lucide-react";
+import { ArrowLeft, Lock, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import AuthCardLayout from "@/components/auth/AuthCardLayout";
+import { IconField, PasswordStrength, ResendCode } from "@/components/auth/AuthField";
 import { FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -40,6 +41,7 @@ export default function ResetPasswordForm() {
     handleSubmit,
     setError,
     getValues,
+    watch,
     formState: { errors },
   } = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(resetPasswordSchema),
@@ -50,6 +52,8 @@ export default function ResetPasswordForm() {
       new_password_confirm: "",
     },
   });
+
+  const newPassword = watch("new_password") ?? "";
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -88,6 +92,8 @@ export default function ResetPasswordForm() {
 
   return (
     <AuthCardLayout
+      variant="reset"
+      flip
       icon={<LockKeyhole className="h-7 w-7" />}
       title="Set a new password"
       subtitle={
@@ -104,7 +110,8 @@ export default function ResetPasswordForm() {
         )
       }
       footer={
-        <Link to="/login" className="font-semibold text-[var(--brand-pink)]">
+        <Link to="/login" className="inline-flex items-center gap-1.5 font-semibold text-[var(--brand-pink)] hover:underline">
+          <ArrowLeft className="h-4 w-4" />
           Back to sign in
         </Link>
       }
@@ -113,14 +120,17 @@ export default function ResetPasswordForm() {
         {!identifierFromQuery && (
           <div className="space-y-1.5">
             <Label htmlFor="identifier">Email or mobile number</Label>
-            <Input
-              id="identifier"
-              autoComplete="username"
-              autoCapitalize="none"
-              placeholder="you@example.com or 9876543210"
-              hasError={!!errors.identifier}
-              {...register("identifier")}
-            />
+            <IconField icon={Mail}>
+              <Input
+                id="identifier"
+                autoComplete="username"
+                autoCapitalize="none"
+                placeholder="you@example.com or 9876543210"
+                className="pl-11"
+                hasError={!!errors.identifier}
+                {...register("identifier")}
+              />
+            </IconField>
             <FormError message={errors.identifier?.message} />
           </div>
         )}
@@ -143,28 +153,35 @@ export default function ResetPasswordForm() {
 
         <div className="space-y-1.5">
           <Label htmlFor="new_password">New password</Label>
-          <PasswordInput
-            id="new_password"
-            autoComplete="new-password"
-            placeholder="••••••••"
-            hasError={!!errors.new_password}
-            {...register("new_password")}
-          />
+          <IconField icon={Lock}>
+            <PasswordInput
+              id="new_password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              className="pl-11"
+              hasError={!!errors.new_password}
+              {...register("new_password")}
+            />
+          </IconField>
           <FormError message={errors.new_password?.message} />
-          <p className="text-xs text-slate-500">
-            Use at least 8 characters, and not only numbers.
-          </p>
+          <div className="space-y-2 pt-0.5">
+            <PasswordStrength value={newPassword} />
+            <p className="text-xs text-slate-500">Use at least 8 characters, and not only numbers.</p>
+          </div>
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="new_password_confirm">Confirm new password</Label>
-          <PasswordInput
-            id="new_password_confirm"
-            autoComplete="new-password"
-            placeholder="••••••••"
-            hasError={!!errors.new_password_confirm}
-            {...register("new_password_confirm")}
-          />
+          <IconField icon={ShieldCheck}>
+            <PasswordInput
+              id="new_password_confirm"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              className="pl-11"
+              hasError={!!errors.new_password_confirm}
+              {...register("new_password_confirm")}
+            />
+          </IconField>
           <FormError message={errors.new_password_confirm?.message} />
         </div>
 
@@ -177,33 +194,18 @@ export default function ResetPasswordForm() {
           />
         )}
 
-        <Button type="submit" className="w-full" size="lg" isLoading={resetMutation.isPending}>
+        <Button type="submit" className="w-full shadow-lg shadow-[var(--brand-pink)]/25" size="lg" isLoading={resetMutation.isPending}>
           Reset password
         </Button>
       </form>
 
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-x-1.5 text-center text-sm text-slate-500">
-        Didn't get a code?
-        <button
-          type="button"
-          onClick={handleResend}
-          disabled={cooldown > 0 || resendMutation.isPending}
-          className="font-semibold text-[var(--brand-pink)] disabled:cursor-not-allowed disabled:text-slate-400"
-        >
-          {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
-        </button>
-      </div>
-
-      {resendNotice && !resendMutation.isError && (
-        <p className="mt-2 text-center text-xs text-emerald-600">{resendNotice}</p>
-      )}
-      {resendMutation.isError && (
-        <div className="mt-2">
-          <FormError
-            message={getApiErrorMessage(resendMutation.error, "Could not send a new code.")}
-          />
-        </div>
-      )}
+      <ResendCode
+        cooldown={cooldown}
+        pending={resendMutation.isPending}
+        onResend={handleResend}
+        notice={resendNotice}
+        error={resendMutation.isError ? getApiErrorMessage(resendMutation.error, "Could not send a new code.") : undefined}
+      />
     </AuthCardLayout>
   );
 }

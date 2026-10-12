@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  ArrowLeft,
   Copy,
   Download,
   ExternalLink,
   FileText,
   Power,
   QrCode as QrCodeIcon,
+  SearchX,
   Sparkles,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BackLink, StateCard } from "@/components/portal/PortalUI";
 import { useEvent } from "@/queries/useEventQueries";
 import {
   useDownloadEventQRCodeMutation,
@@ -137,60 +138,41 @@ export default function EventQRCode() {
   const status = httpStatus(qrError);
   if (isError && (status === 402 || status === 403)) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <Card className="p-8">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
-            <Sparkles className="h-6 w-6" />
-          </span>
-          <h1 className="mt-4 font-semibold text-[var(--brand-navy)]">QR codes aren't in your plan</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            {getApiErrorMessage(qrError, "Upgrade your plan to give guests a QR code for their photos.")}
-          </p>
-          <Link to="/pricing" className={buttonVariants({ className: "mt-6" })}>
-            View plans
-          </Link>
-        </Card>
-      </div>
+      <StateCard
+        tone="brand"
+        icon={Sparkles}
+        title="QR codes aren't in your plan"
+        message={getApiErrorMessage(qrError, "Upgrade your plan to give guests a QR code for their photos.")}
+        to="/pricing"
+        actionLabel="View plans"
+      />
     );
   }
 
   if (isError || !event || !qrCode) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <Card className="p-8">
-          <p className="text-sm text-slate-500">
-            This event's QR code couldn't be loaded, or you don't have access to it.
-          </p>
-          <Link
-            to="/portal/events"
-            className={buttonVariants({ variant: "outline", className: "mt-6" })}
-          >
-            Back to events
-          </Link>
-        </Card>
-      </div>
+      <StateCard
+        icon={SearchX}
+        message="This event's QR code couldn't be loaded, or you don't have access to it."
+        to="/portal/events"
+        actionLabel="Back to events"
+      />
     );
   }
 
   return (
     <div className="mobile-safe-bottom px-4 py-6 sm:px-6 sm:py-10 lg:px-10">
       <div className="mx-auto max-w-2xl">
-        <Link
-          to={`/portal/events/${event.id}`}
-          className="inline-flex min-h-10 items-center gap-1.5 text-sm font-medium text-slate-500 [@media(hover:hover)]:hover:text-[var(--brand-navy)]"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to event
-        </Link>
+        <BackLink to={`/portal/events/${event.id}`}>Back to event</BackLink>
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-          <Card className="mt-4 p-5 sm:p-8">
+          <Card className="mt-4 overflow-hidden rounded-[2rem] p-5 sm:p-8">
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[image:var(--gradient-brand)] text-white shadow-md shadow-[var(--brand-pink)]/20">
                 <QrCodeIcon className="h-5 w-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <h1 className="font-semibold text-[var(--brand-navy)]">QR Code</h1>
+                <h1 className="text-lg font-bold text-[var(--brand-navy)]">QR Code</h1>
                 <p className="truncate text-sm text-slate-500">{event.name}</p>
               </div>
               <span
@@ -203,10 +185,10 @@ export default function EventQRCode() {
               </span>
             </div>
 
-            <div className="mt-6 flex justify-center rounded-2xl bg-white p-2 sm:p-6">
+            <div className="gradient-mesh-subtle mt-6 flex justify-center rounded-3xl p-5 sm:p-8">
               <div
                 className={cn(
-                  "flex aspect-square w-full max-w-[14rem] items-center justify-center rounded-xl border border-slate-100 bg-white p-4 transition-opacity",
+                  "flex aspect-square w-full max-w-[15rem] items-center justify-center rounded-2xl border border-slate-100 bg-white p-4 shadow-xl shadow-[var(--brand-navy)]/10 transition-opacity",
                   !qrCode.is_active && "opacity-40"
                 )}
               >
@@ -258,8 +240,8 @@ export default function EventQRCode() {
               Print the PDF and place it at your venue for guests to scan.
             </p>
 
-            <div className="mt-6 rounded-2xl border border-slate-100 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                 Guest link
               </p>
               <p className="mt-1.5 break-all text-sm text-[var(--brand-navy)]">{qrCode.scan_url}</p>

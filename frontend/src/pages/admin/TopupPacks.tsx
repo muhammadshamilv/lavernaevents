@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Pencil, Plus, Power } from "lucide-react";
+import { Package, Pencil, Plus, Power } from "lucide-react";
 import { Card, FormError } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/portal/PortalUI";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import AdminDialog, { DialogActions } from "@/components/admin/AdminDialog";
 import { getApiErrorMessage, getApiFieldErrors } from "@/lib/apiError";
@@ -90,7 +91,12 @@ function PackFormDialog({ pack, onClose }: { pack: AdminTopupPack | null; onClos
   };
 
   return (
-    <AdminDialog title={isEditing ? "Edit topup pack" : "Add topup pack"} onClose={onClose}>
+    <AdminDialog
+      title={isEditing ? "Edit topup pack" : "Add topup pack"}
+      description="Fixed packs organizers can buy to raise their quota."
+      icon={isEditing ? Pencil : Plus}
+      onClose={onClose}
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="mt-3 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="name">Pack name</Label>
@@ -125,8 +131,8 @@ function PackFormDialog({ pack, onClose }: { pack: AdminTopupPack | null; onClos
           <FormError message={errors.display_order?.message} />
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-[var(--brand-navy)]">
-          <input type="checkbox" className="h-4 w-4 rounded" {...register("is_active")} />
+        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 p-3.5 text-sm text-[var(--brand-navy)] transition-colors hover:border-[var(--brand-pink)]/40">
+          <input type="checkbox" className="h-4 w-4 rounded accent-[var(--brand-pink)]" {...register("is_active")} />
           Active (visible to organizers)
         </label>
 
@@ -166,21 +172,22 @@ export default function TopupPacks() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--brand-navy)]">Topup Packs</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Fixed packs organizers can buy to raise their own invitation or voice-call quota.
-          </p>
-        </div>
-        <Button onClick={() => setFormPack("new")}>
-          <Plus className="h-4 w-4" />
-          Add pack
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-6"
+        eyebrow="Admin"
+        icon={Package}
+        title="Topup Packs"
+        description="Fixed packs organizers can buy to raise their own invitation or voice-call quota."
+        actions={
+          <Button onClick={() => setFormPack("new")}>
+            <Plus className="h-4 w-4" />
+            Add pack
+          </Button>
+        }
+      />
 
       {isError ? (
-        <Card className="p-8 text-center text-sm text-slate-500">
+        <Card className="bg-rose-50/60 p-8 text-center text-sm text-rose-600 ring-1 ring-rose-100">
           We couldn't load topup packs right now. Please refresh the page.
         </Card>
       ) : isLoading ? (
@@ -192,7 +199,7 @@ export default function TopupPacks() {
       ) : packs && packs.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {packs.map((pack) => (
-            <Card key={pack.id} className="flex flex-col p-5">
+            <Card key={pack.id} className="card-hover-lift flex flex-col p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="truncate font-bold text-[var(--brand-navy)]">{pack.name}</h3>
@@ -205,7 +212,7 @@ export default function TopupPacks() {
                 )}
               </div>
 
-              <p className="mt-3 text-2xl font-bold text-[var(--brand-navy)]">₹{pack.price}</p>
+              <p className="mt-3 text-3xl font-bold tracking-tight text-[var(--brand-navy)]">₹{pack.price}</p>
               <p className="text-sm text-slate-500">
                 {pack.quantity.toLocaleString()} {pack.kind === "INVITATIONS" ? "invitations" : "voice calls"}
               </p>
@@ -225,7 +232,12 @@ export default function TopupPacks() {
           ))}
         </div>
       ) : (
-        <Card className="p-8 text-center text-sm text-slate-500">No topup packs yet. Click "Add pack" to create one.</Card>
+        <Card className="p-10 text-center text-sm text-slate-500">
+          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+            <Package className="h-7 w-7" />
+          </span>
+          No topup packs yet. Click "Add pack" to create one.
+        </Card>
       )}
 
       {formPack && <PackFormDialog pack={formPack === "new" ? null : formPack} onClose={() => setFormPack(null)} />}

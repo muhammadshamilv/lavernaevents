@@ -239,12 +239,22 @@ def upload_media(
         )
 
         # Look for faces once the upload is safely saved, so guests can find
-        # this photo with a selfie. Only plans that include QR codes / face
-        # search pay that cost; the photo waits as PENDING otherwise.
-        if is_image and plan.qr_code_enabled:
+        # this photo (or video) with a selfie. Only plans that include QR
+        # codes / face search pay that cost; the file waits as PENDING
+        # otherwise. A video is only scanned when the server can read video.
+        if plan.qr_code_enabled and (is_image or _can_scan_video()):
             transaction.on_commit(_schedule_face_scan)
 
         return media
+
+
+def _can_scan_video() -> bool:
+    try:
+        from .face_scan import video_scan_available
+
+        return video_scan_available()
+    except Exception:
+        return False
 
 
 def _schedule_face_scan() -> None:

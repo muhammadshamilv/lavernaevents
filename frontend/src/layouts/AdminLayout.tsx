@@ -41,9 +41,12 @@ export default function AdminLayout() {
 
   if (isDesktop) {
     return (
-      <div className="flex min-h-screen bg-slate-50/70">
+      <div className="flex min-h-screen bg-[linear-gradient(180deg,#faf9fc_0%,#f6f5fa_100%)]">
         <SkipLink />
-        <AdminSidebar />
+        {/* Pinned to the window: the sidebar stays put while the page scrolls. */}
+        <div className="sticky top-0 z-30 h-screen shrink-0 self-start">
+          <AdminSidebar />
+        </div>
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto focus:outline-none">
           <Outlet />
         </main>
@@ -53,7 +56,7 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50/70">
+    <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#faf9fc_0%,#f6f5fa_100%)]">
       <SkipLink />
       <AdminTopBar />
       <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-24 focus:outline-none">

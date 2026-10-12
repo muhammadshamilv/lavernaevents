@@ -14,6 +14,9 @@ from .face_scan import (
     start_background_scan,
 )
 from .models import GalleryMedia
+from .overview import DEFAULT_PAGE_SIZE as OVERVIEW_PAGE_SIZE
+from .overview import MAX_PAGE_SIZE as OVERVIEW_MAX_PAGE_SIZE
+from .overview import get_overview_page
 from .serializers import GalleryMediaSerializer, GalleryMediaUploadSerializer
 from .services import (
     GalleryError,
@@ -56,6 +59,38 @@ def _positive_int(value, default: int, maximum: int | None = None) -> int:
     number = max(number, 1)
 
     return min(number, maximum) if maximum else number
+
+
+class GalleryOverviewView(APIView):
+    """Organizer-only: the Gallery hub. A page of the organizer's events,
+    each with its photo / video counts, how many came from photographers,
+    and a few preview pictures - plus totals across all events.
+
+    ?page=1&page_size=12&search=wedding&photographers=1
+    """
+
+    permission_classes = [IsAuthenticated, IsOrganizer]
+
+    def get(self, request):
+        page = _positive_int(request.query_params.get("page"), 1)
+        page_size = _positive_int(
+            request.query_params.get("page_size"), OVERVIEW_PAGE_SIZE, OVERVIEW_MAX_PAGE_SIZE
+        )
+        search = (request.query_params.get("search") or "").strip()[:100]
+        photographers_only = request.query_params.get("photographers") in {"1", "true", "True"}
+
+        data = get_overview_page(
+            request.user,
+            page=page,
+            page_size=page_size,
+            search=search,
+            photographers_only=photographers_only,
+        )
+
+        return Response(
+            {"success": True, "message": "Gallery overview retrieved successfully.", "data": data},
+            status=status.HTTP_200_OK,
+        )
 
 
 class EventGalleryView(APIView):

@@ -7,14 +7,15 @@ from gallery.face_scan import (
     pending_queryset,
     retry_failed,
     scan_pending,
+    scannable_media_types,
 )
 from gallery.models import GalleryMedia
 
 
 class Command(BaseCommand):
     help = (
-        "Find the faces in gallery photos that have not been scanned yet, so guests can "
-        "find their photos with a selfie. Safe to run repeatedly or on a schedule."
+        "Find the faces in gallery photos and videos that have not been scanned yet, so guests can "
+        "find them with a selfie. Safe to run repeatedly or on a schedule."
     )
 
     def add_arguments(self, parser):
@@ -24,7 +25,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--rescan",
             action="store_true",
-            help="Scan every photo again, even ones already scanned (old results are replaced).",
+            help="Scan every photo and video again, even ones already scanned (old results are replaced).",
         )
         parser.add_argument(
             "--ignore-plan",
@@ -42,7 +43,7 @@ class Command(BaseCommand):
         respect_plan = not options["ignore_plan"]
 
         if options["rescan"]:
-            scope = GalleryMedia.objects.filter(media_type=GalleryMedia.MediaType.IMAGE)
+            scope = GalleryMedia.objects.filter(media_type__in=scannable_media_types())
             if event_id:
                 scope = scope.filter(event_id=event_id)
             reset = scope.update(face_scan_status=GalleryMedia.FaceScanStatus.PENDING)

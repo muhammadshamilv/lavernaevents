@@ -1,15 +1,6 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  Mail,
-  Phone,
-  RefreshCw,
-} from "lucide-react";
+import { useParams } from "react-router-dom";
+import { CheckCircle2, ExternalLink, FileText, Mail, Phone, RefreshCw, ScrollText, SearchX, Send } from "lucide-react";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { useEvent } from "@/queries/useEventQueries";
 import { useEventInvitations } from "@/queries/useInvitationQueries";
@@ -24,7 +15,8 @@ import { navigateWhatsAppWindow, openPendingWhatsAppWindow } from "@/lib/whatsap
 import { getApiErrorMessage } from "@/lib/apiError";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, FormError } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { BackLink, PageHeader, PageNav, StateCard } from "@/components/portal/PortalUI";
 import { cn } from "@/lib/utils";
 import type { InvitationStatus } from "@/types/invitation.types";
 import type { NotificationLog, NotificationStatus } from "@/types/notification.types";
@@ -82,6 +74,12 @@ function formatDateTimeWithClock(value: string): string {
 
 type Tab = "invitations" | "logs" | "report";
 
+const TABS: { value: Tab; label: string; icon: typeof Mail }[] = [
+  { value: "invitations", label: "Invitations", icon: Mail },
+  { value: "logs", label: "Send log", icon: ScrollText },
+  { value: "report", label: "Report", icon: FileText },
+];
+
 export default function EventInvitations() {
   const { id } = useParams<{ id: string }>();
   const eventId = id ? Number(id) : undefined;
@@ -100,80 +98,52 @@ export default function EventInvitations() {
 
   if (eventError || !event || !eventId) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <Card className="p-8">
-          <p className="text-sm text-slate-500">
-            This event couldn't be found, or you don't have access to it.
-          </p>
-          <Link
-            to="/portal/events"
-            className={buttonVariants({ variant: "outline", className: "mt-6" })}
-          >
-            Back to events
-          </Link>
-        </Card>
-      </div>
+      <StateCard
+        icon={SearchX}
+        title="Event not found"
+        message="This event couldn't be found, or you don't have access to it."
+        to="/portal/events"
+        actionLabel="Back to events"
+      />
     );
   }
 
   return (
     <div className="mobile-safe-bottom px-4 py-6 sm:px-6 sm:py-10 lg:px-10">
       <div className="mx-auto max-w-4xl">
-        <Link
-          to={`/portal/events/${eventId}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[var(--brand-navy)]"
+        <BackLink to={`/portal/events/${eventId}`}>{event.name}</BackLink>
+
+        <PageHeader
+          className="mt-3"
+          eyebrow="Invitations"
+          icon={Send}
+          title="Invitations"
+          description="Everything you've sent for this event, and how it went."
+        />
+
+        <div
+          role="tablist"
+          aria-label="Invitation sections"
+          className="mt-5 grid grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1 sm:inline-grid sm:w-auto"
         >
-          <ArrowLeft className="h-4 w-4" />
-          {event.name}
-        </Link>
-
-        <h1 className="mt-3 text-xl font-bold text-[var(--brand-navy)] sm:text-2xl">
-          Invitations
-        </h1>
-
-        <div role="tablist" aria-label="Invitation sections" className="mt-4 flex gap-1 rounded-full bg-slate-100 p-1 sm:inline-flex sm:gap-2 sm:bg-transparent sm:p-0 sm:border-b sm:border-slate-100">
-          <button
-            type="button"
-            onClick={() => setTab("invitations")}
-            role="tab"
-            aria-selected={tab === "invitations"}
-            className={cn(
-              "flex-1 rounded-full px-3 py-2 text-sm font-medium transition-colors sm:flex-none sm:rounded-none sm:border-b-2 sm:px-3 sm:py-2",
-              tab === "invitations"
-                ? "bg-white text-[var(--brand-pink)] soft-shadow sm:bg-transparent sm:border-[var(--brand-pink)] sm:shadow-none"
-                : "text-slate-500 hover:text-[var(--brand-navy)] sm:border-transparent"
-            )}
-          >
-            Invitations
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("logs")}
-            role="tab"
-            aria-selected={tab === "logs"}
-            className={cn(
-              "flex-1 rounded-full px-3 py-2 text-sm font-medium transition-colors sm:flex-none sm:rounded-none sm:border-b-2 sm:px-3 sm:py-2",
-              tab === "logs"
-                ? "bg-white text-[var(--brand-pink)] soft-shadow sm:bg-transparent sm:border-[var(--brand-pink)] sm:shadow-none"
-                : "text-slate-500 hover:text-[var(--brand-navy)] sm:border-transparent"
-            )}
-          >
-            Send log
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("report")}
-            role="tab"
-            aria-selected={tab === "report"}
-            className={cn(
-              "flex-1 rounded-full px-3 py-2 text-sm font-medium transition-colors sm:flex-none sm:rounded-none sm:border-b-2 sm:px-3 sm:py-2",
-              tab === "report"
-                ? "bg-white text-[var(--brand-pink)] soft-shadow sm:bg-transparent sm:border-[var(--brand-pink)] sm:shadow-none"
-                : "text-slate-500 hover:text-[var(--brand-navy)] sm:border-transparent"
-            )}
-          >
-            Report
-          </button>
+          {TABS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => setTab(item.value)}
+              role="tab"
+              aria-selected={tab === item.value}
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all sm:px-5",
+                tab === item.value
+                  ? "bg-white text-[var(--brand-pink)] shadow-sm"
+                  : "text-slate-500 hover:text-[var(--brand-navy)]"
+              )}
+            >
+              <item.icon className="hidden h-4 w-4 sm:block" />
+              {item.label}
+            </button>
+          ))}
         </div>
 
         {tab === "invitations" && <InvitationsTab eventId={eventId} />}
@@ -213,8 +183,8 @@ function InvitationsTab({ eventId }: { eventId: number }) {
 
       {!isLoading && !isError && invitations.length === 0 && (
         <Card className="p-8 text-center sm:p-10">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
-            <Mail className="h-6 w-6" />
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full text-[var(--brand-pink)]" style={{ background: "var(--gradient-brand-soft)" }}>
+            <Mail className="h-7 w-7" />
           </span>
           <p className="mt-4 font-semibold text-[var(--brand-navy)]">
             No invitations sent yet for this event
@@ -230,7 +200,7 @@ function InvitationsTab({ eventId }: { eventId: number }) {
         <Card className="overflow-hidden">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                 <th className="px-6 py-3">Guest</th>
                 <th className="px-6 py-3">Template</th>
                 <th className="px-6 py-3">Generated</th>
@@ -239,7 +209,7 @@ function InvitationsTab({ eventId }: { eventId: number }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {invitations.map((invitation) => (
-                <tr key={invitation.id} className="transition-colors hover:bg-slate-50">
+                <tr key={invitation.id} className="transition-colors hover:bg-[var(--brand-pink)]/[0.03]">
                   <td className="px-6 py-4 font-medium text-[var(--brand-navy)]">
                     {invitation.guest_name}
                   </td>
@@ -267,7 +237,7 @@ function InvitationsTab({ eventId }: { eventId: number }) {
       {!isLoading && !isError && invitations.length > 0 && !isDesktop && (
         <div className="space-y-3">
           {invitations.map((invitation) => (
-            <Card key={invitation.id} className="p-4">
+            <Card key={invitation.id} className="p-4 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-[var(--brand-navy)]">
@@ -414,8 +384,8 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
 
       {!isLoading && !isError && logs.length === 0 && (
         <Card className="p-8 text-center sm:p-10">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
-            <Mail className="h-6 w-6" />
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full text-[var(--brand-pink)]" style={{ background: "var(--gradient-brand-soft)" }}>
+            <Mail className="h-7 w-7" />
           </span>
           <p className="mt-4 font-semibold text-[var(--brand-navy)]">No sends yet</p>
           <p className="mt-2 text-sm text-slate-500">
@@ -428,7 +398,7 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
         <Card className="overflow-hidden">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                 <th className="px-6 py-3">Guest</th>
                 <th className="px-6 py-3">Channel</th>
                 <th className="px-6 py-3">Status</th>
@@ -438,7 +408,7 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {logs.map((log) => (
-                <tr key={log.id} className="transition-colors hover:bg-slate-50">
+                <tr key={log.id} className="transition-colors hover:bg-[var(--brand-pink)]/[0.03]">
                   <td className="px-6 py-4 font-medium text-[var(--brand-navy)]">
                     {log.guest_name}
                   </td>
@@ -473,7 +443,7 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
       {!isLoading && !isError && logs.length > 0 && !isDesktop && (
         <div className="space-y-3">
           {logs.map((log) => (
-            <Card key={log.id} className="p-4">
+            <Card key={log.id} className="p-4 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-[var(--brand-navy)]">{log.guest_name}</p>
@@ -516,30 +486,13 @@ function PaginationRow({
   onPageChange: (updater: (prev: number) => number) => void;
 }) {
   return (
-    <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
-      <span>
-        Page {pagination.current_page} of {pagination.total_pages}
-      </span>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => onPageChange((prev) => Math.max(1, prev - 1))}
-          disabled={!pagination.previous}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="Previous page"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onPageChange((prev) => prev + 1)}
-          disabled={!pagination.next}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="Next page"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
+    <PageNav
+      className="mt-5"
+      label={`Page ${pagination.current_page} of ${pagination.total_pages}`}
+      canPrev={!!pagination.previous}
+      canNext={!!pagination.next}
+      onPrev={() => onPageChange((prev) => Math.max(1, prev - 1))}
+      onNext={() => onPageChange((prev) => prev + 1)}
+    />
   );
 }

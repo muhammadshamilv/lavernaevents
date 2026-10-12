@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, Navigate, NavLink, Outlet } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CalendarDays, LogOut, Settings } from "lucide-react";
-import logo from "@/assets/laverna-logo.png";
+import Logo from "@/components/brand/Logo";
 import { useAuthStore } from "@/stores/auth.store";
 import { useLogoutMutation } from "@/queries/useAuthQueries";
 import { Toaster } from "@/components/ui/toaster";
@@ -16,10 +16,10 @@ const NAV_ITEMS = [
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+    "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/40",
     isActive
-      ? "bg-[var(--brand-pink)]/8 text-[var(--brand-pink)] before:absolute before:left-0 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-[var(--brand-pink)]"
-      : "text-slate-600 hover:bg-slate-100 hover:text-[var(--brand-navy)]"
+      ? "bg-gradient-to-r from-[var(--brand-pink)]/12 to-[var(--brand-pink)]/[0.03] font-semibold text-[var(--brand-pink)] before:absolute before:left-0 before:top-1/2 before:h-6 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-[var(--brand-pink)]"
+      : "text-slate-600 hover:bg-slate-100 hover:text-[var(--brand-navy)] [@media(hover:hover)]:hover:translate-x-0.5"
   );
 
 function AccountBlock({ onNavigate }: { onNavigate?: () => void }) {
@@ -34,8 +34,8 @@ function AccountBlock({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      <div className="flex items-center gap-3 rounded-xl px-3 py-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--brand-navy)] text-sm font-semibold text-white">
+      <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-100">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[image:var(--gradient-brand)] text-sm font-semibold text-white shadow-sm">
           {initial}
         </div>
         <div className="min-w-0 flex-1">
@@ -61,14 +61,15 @@ function AccountBlock({ onNavigate }: { onNavigate?: () => void }) {
 
 function PhotographerSidebar() {
   return (
-    <aside className="hidden h-screen w-64 shrink-0 flex-col border-r border-slate-100 bg-white lg:flex">
+    <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col self-start border-r border-slate-100 bg-white shadow-[1px_0_0_0_rgba(36,21,66,0.02)] lg:flex">
       <div className="flex h-16 items-center border-b border-slate-100 px-6">
-        <Link to="/photographer">
-          <img src={logo} alt="LavernaEvents" className="h-8 w-auto object-contain" />
+        <Link to="/photographer" aria-label="LavernaEvents photographer home">
+          <Logo size="md" />
         </Link>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Photographer">
+        <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Menu</p>
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end} className={navLinkClass}>
             <item.icon className="h-4 w-4" />
@@ -91,19 +92,21 @@ function PhotographerTopBar() {
 
   return (
     <header
-      className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-100 bg-white/90 px-4 backdrop-blur-md lg:hidden"
+      className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-100 bg-white/85 px-4 backdrop-blur-xl lg:hidden"
       style={{ paddingTop: "var(--safe-area-inset-top)" }}
     >
-      <Link to="/photographer" onClick={() => setMenuOpen(false)}>
-        <img src={logo} alt="LavernaEvents" className="h-7 w-auto object-contain" />
+      <Link to="/photographer" onClick={() => setMenuOpen(false)} aria-label="LavernaEvents photographer home">
+        <Logo size="sm" />
       </Link>
 
       <div className="relative">
         <button
           type="button"
           onClick={() => setMenuOpen((prev) => !prev)}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-navy)] text-sm font-semibold text-white"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-[image:var(--gradient-brand)] text-sm font-semibold text-white shadow-sm ring-2 ring-white transition-transform active:scale-95"
           aria-label="Account menu"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
         >
           {initial}
         </button>
@@ -117,7 +120,7 @@ function PhotographerTopBar() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-11 z-50 w-44 overflow-hidden rounded-2xl border border-slate-100 bg-white soft-shadow-lg p-1.5"
+                className="absolute right-0 top-11 z-50 w-60 overflow-hidden rounded-2xl border border-slate-100 bg-white p-1.5 soft-shadow-lg"
               >
                 <AccountBlock onNavigate={() => setMenuOpen(false)} />
               </motion.div>
@@ -132,7 +135,7 @@ function PhotographerTopBar() {
 function PhotographerBottomNav() {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-slate-100 bg-white/95 px-2 pt-2 backdrop-blur-md lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-slate-100 bg-white/90 px-2 pt-2 shadow-[0_-8px_24px_-12px_rgba(36,21,66,0.12)] backdrop-blur-xl lg:hidden"
       style={{ paddingBottom: "calc(0.5rem + var(--safe-area-inset-bottom))" }}
     >
       {NAV_ITEMS.map((item) => (
@@ -142,9 +145,9 @@ function PhotographerBottomNav() {
           end={item.end}
           className={({ isActive }) =>
             cn(
-              "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-xs font-medium transition-all duration-200",
+              "flex min-h-12 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-1.5 text-xs font-medium transition-all duration-200 active:scale-95",
               isActive
-                ? "bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]"
+                ? "bg-[var(--brand-pink)]/10 font-semibold text-[var(--brand-pink)]"
                 : "text-slate-400 hover:text-slate-600"
             )
           }
@@ -166,7 +169,7 @@ export default function PhotographerLayout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50/70">
+    <div className="flex min-h-screen bg-[linear-gradient(180deg,#faf9fc_0%,#f6f5fa_100%)]">
       <PhotographerSidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">

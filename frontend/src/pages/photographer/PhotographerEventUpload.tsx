@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Camera, ImagePlus } from "lucide-react";
+import { Camera, ImagePlus, ImageOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BackLink, PageHeader, StateCard } from "@/components/portal/PortalUI";
 import { useMyPhotographerEvents } from "@/queries/usePhotographerQueries";
 import { useEventGallery } from "@/queries/useGalleryQueries";
 import { formatEventDate, formatEventTime } from "@/lib/eventDisplay";
@@ -33,45 +34,41 @@ export default function PhotographerEventUpload() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
         <Skeleton className="h-4 w-32" />
-        <Skeleton className="mt-4 h-7 w-56" />
+        <Skeleton className="mt-4 h-8 w-64" />
+        <Skeleton className="mt-6 h-40 w-full rounded-3xl" />
       </div>
     );
   }
 
   if (!grant || !eventId) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <Card className="p-8">
-          <p className="text-sm text-slate-500">
-            You don't have access to this event. It may not exist, or your access may have been removed or expired.
-          </p>
-          <Link to="/photographer" className={buttonVariants({ variant: "outline", className: "mt-6" })}>
-            Back to my events
-          </Link>
-        </Card>
-      </div>
+      <StateCard
+        icon={ImageOff}
+        message="You don't have access to this event. It may not exist, or your access may have been removed or expired."
+        to="/photographer"
+        actionLabel="Back to my events"
+      />
     );
   }
 
   return (
     <div className="mobile-safe-bottom px-4 py-6 sm:px-6 sm:py-10 lg:px-10">
       <div className="mx-auto max-w-3xl">
-        <Link
-          to="/photographer"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[var(--brand-navy)]"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to my events
-        </Link>
+        <BackLink to="/photographer">Back to my events</BackLink>
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mt-4">
-          <h1 className="text-xl font-bold text-[var(--brand-navy)] sm:text-2xl">{grant.event.name}</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {formatEventDate(grant.event.event_date)} · {formatEventTime(grant.event.event_time)}
-          </p>
+          <PageHeader
+            title={grant.event.name}
+            description={`${formatEventDate(grant.event.event_date)} · ${formatEventTime(grant.event.event_time)}`}
+          />
 
-          <div className="mt-5 flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-[var(--brand-navy)]">{gallery.totalCount} uploaded</p>
+          <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl bg-white p-3 pl-4 shadow-sm ring-1 ring-slate-100">
+            <p className="flex items-center gap-2 text-sm font-semibold text-[var(--brand-navy)]">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+                <Camera className="h-4 w-4" />
+              </span>
+              {gallery.totalCount} uploaded
+            </p>
 
             <input
               ref={fileInputRef}
@@ -109,7 +106,7 @@ export default function PhotographerEventUpload() {
             )}
 
             {gallery.isError && (
-              <Card className="p-6 text-center text-sm text-rose-600">
+              <Card className="bg-rose-50/60 p-6 text-center text-sm text-rose-600 ring-1 ring-rose-100">
                 Couldn't load the gallery. Your access may have ended.
               </Card>
             )}
@@ -117,12 +114,12 @@ export default function PhotographerEventUpload() {
             {!gallery.isLoading && !gallery.isError && (!media || media.length === 0) && (
               <Card className="p-10 text-center">
                 <span
-                  className="mx-auto flex h-12 w-12 items-center justify-center rounded-full"
+                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
                   style={{ background: "var(--gradient-brand-soft)" }}
                 >
-                  <Camera className="h-5 w-5 text-[var(--brand-navy)]" />
+                  <Camera className="h-6 w-6 text-[var(--brand-navy)]" />
                 </span>
-                <p className="mt-3 text-sm text-slate-500">
+                <p className="mx-auto mt-4 max-w-sm text-sm leading-relaxed text-slate-500">
                   Nothing uploaded yet. Tap Upload to add your first photos or videos.
                 </p>
               </Card>

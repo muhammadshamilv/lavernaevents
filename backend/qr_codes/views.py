@@ -21,6 +21,7 @@ from .serializers import (
     SelfieUploadSerializer,
 )
 from .services import (
+    MAX_SELFIES,
     QRCodeError,
     ensure_qr_code_allowed,
     generate_qr_pdf_bytes,
@@ -166,21 +167,30 @@ class GuestSelfieMatchView(APIView):
     def post(self, request, token):
         qr_code = resolve_active_qr_code(token)
 
-        serializer = SelfieUploadSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(
-                {
-                    "success": False,
-                    "message": "Please upload a selfie photo.",
-                    "errors": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # One selfie, or up to MAX_SELFIES of the same guest (field "selfie"
+        # repeated). Every one is checked like a single upload would be.
+        uploads = request.FILES.getlist("selfie")[:MAX_SELFIES]
+        selfies = []
+
+        for upload in uploads or [None]:
+            serializer = SelfieUploadSerializer(data={"selfie": upload} if upload else {})
+
+            if not serializer.is_valid():
+                return Response(
+                    {
+                        "success": False,
+                        "message": "Please upload a selfie photo.",
+                        "errors": serializer.errors,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            selfies.append(serializer.validated_data["selfie"])
 
         try:
             matched_media, session = match_selfie_to_gallery(
                 event=qr_code.event,
-                selfie_file=serializer.validated_data["selfie"],
+                selfie_files=selfies,
             )
         except QRCodeError as error:
             return _error_response(error, "selfie")

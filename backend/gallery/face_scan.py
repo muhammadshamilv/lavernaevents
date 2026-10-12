@@ -22,6 +22,8 @@ module can be imported without Django being fully set up.
 
 import json
 import logging
+import os
+import tempfile
 import threading
 import time
 
@@ -30,15 +32,28 @@ from django.db import connections, transaction
 
 logger = logging.getLogger(__name__)
 
-# Photos are shrunk before detection: a 12 MP phone photo gives the same
-# faces as a 1600 px copy, in a fraction of the time and memory.
-SCAN_MAX_EDGE = 1600
+# Photos are shrunk before detection: a 12 MP phone photo is far more than
+# the detector needs, and a smaller copy is much quicker and lighter. 2000 px
+# (up from 1600) keeps the faces in a wide group shot big enough to be found.
+# Lower it with FACE_SCAN_MAX_EDGE if the server runs out of memory.
+SCAN_MAX_EDGE = config("FACE_SCAN_MAX_EDGE", default=2000, cast=int)
 MAX_SCAN_PIXELS = 60_000_000
 
 # Faces smaller than this (in the shrunk image) are background specks;
 # their encodings are unreliable and cause wrong matches.
-MIN_FACE_PX = 40
+MIN_FACE_PX = 36
 MAX_FACES_PER_PHOTO = 50
+
+# --- Videos -------------------------------------------------------------
+# A video is scanned by looking at still frames taken every few seconds
+# (people stay in view for longer than that), never every frame.
+VIDEO_FRAME_STEP_SECONDS = 2.0
+MAX_VIDEO_FRAMES = 45
+VIDEO_FRAME_MAX_EDGE = 1280
+MAX_VIDEO_SCAN_SECONDS = 150
+
+# The same person in neighbouring frames is stored once, not 40 times.
+VIDEO_DUPLICATE_DISTANCE = 0.3
 
 BATCH_SIZE = 20
 
@@ -81,6 +96,31 @@ def face_search_available() -> bool:
         return True
     except FaceSearchUnavailable:
         return False
+
+
+def video_scan_available() -> bool:
+    """Videos can be scanned when OpenCV (which reads video files) is
+    installed. Without it videos are simply left alone - photos still work."""
+
+    try:
+        import cv2  # noqa: F401
+    except ImportError:
+        return False
+
+    return True
+
+
+def scannable_media_types() -> list[str]:
+    """The kinds of gallery media this server can look for faces in."""
+
+    from .models import GalleryMedia
+
+    types = [GalleryMedia.MediaType.IMAGE]
+
+    if video_scan_available():
+        types.append(GalleryMedia.MediaType.VIDEO)
+
+    return types
 
 
 def organizer_has_face_search(organizer) -> bool:
@@ -142,13 +182,122 @@ def _encode_faces(library, image_array) -> list[list[float]]:
     return [[float(value) for value in encoding] for encoding in library.face_encodings(image_array, locations)]
 
 
+def _copy_to_temp_file(media) -> str:
+    """A video must sit in a real file for OpenCV to read it. Returns the
+    path; the caller deletes it."""
+
+    suffix = os.path.splitext(media.file.name or "")[1] or ".mp4"
+    handle = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+
+    try:
+        media.file.open("rb")
+
+        try:
+            for chunk in iter(lambda: media.file.read(1024 * 1024), b""):
+                handle.write(chunk)
+        finally:
+            media.file.close()
+    except Exception:
+        handle.close()
+        os.unlink(handle.name)
+        raise
+
+    handle.close()
+    return handle.name
+
+
+def _video_frames(path: str):
+    """Still frames (RGB arrays) taken every few seconds, at most
+    MAX_VIDEO_FRAMES of them, spread over the whole video."""
+
+    import cv2
+
+    capture = cv2.VideoCapture(path)
+
+    try:
+        if not capture.isOpened():
+            raise ValueError("the video could not be opened")
+
+        fps = capture.get(cv2.CAP_PROP_FPS) or 0
+        total = capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+        fps = fps if fps and fps > 0 else 25.0
+        duration = total / fps if total and total > 0 else 0
+
+        # Long videos are sampled more thinly so the whole video is covered.
+        step_seconds = max(VIDEO_FRAME_STEP_SECONDS, duration / MAX_VIDEO_FRAMES)
+        step_frames = max(1, int(round(step_seconds * fps)))
+
+        index = 0
+        taken = 0
+
+        while taken < MAX_VIDEO_FRAMES:
+            if not capture.grab():
+                break
+
+            if index % step_frames == 0:
+                ok, frame = capture.retrieve()
+
+                if ok and frame is not None:
+                    height, width = frame.shape[:2]
+                    scale = min(1.0, VIDEO_FRAME_MAX_EDGE / max(height, width))
+
+                    if scale < 1.0:
+                        frame = cv2.resize(
+                            frame,
+                            (max(1, int(width * scale)), max(1, int(height * scale))),
+                            interpolation=cv2.INTER_AREA,
+                        )
+
+                    yield cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    taken += 1
+
+            index += 1
+    finally:
+        capture.release()
+
+
+def _encode_video(library, media) -> list[list[float]]:
+    """Faces seen in a video, each person once per stretch of video."""
+
+    import numpy as np
+
+    path = _copy_to_temp_file(media)
+    kept: list[list[float]] = []
+    started = time.monotonic()
+
+    try:
+        for frame in _video_frames(path):
+            for encoding in _encode_faces(library, frame):
+                if kept:
+                    distances = np.linalg.norm(np.asarray(kept) - np.asarray(encoding), axis=1)
+
+                    if distances.min() < VIDEO_DUPLICATE_DISTANCE:
+                        continue
+
+                kept.append(encoding)
+
+            if time.monotonic() - started > MAX_VIDEO_SCAN_SECONDS:
+                logger.info("Video %s: scan stopped early after %s s.", getattr(media, "pk", "?"), MAX_VIDEO_SCAN_SECONDS)
+                break
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    return kept[: MAX_FACES_PER_PHOTO * 4]
+
+
 def _scan_one(library, media) -> tuple[str, list[list[float]]]:
-    """(status, encodings). A photo that cannot be read is FAILED, never an
-    exception: one bad file must not stop the rest of the batch."""
+    """(status, encodings). A photo or video that cannot be read is FAILED,
+    never an exception: one bad file must not stop the rest of the batch."""
 
     from .models import GalleryMedia
 
     try:
+        if getattr(media, "media_type", GalleryMedia.MediaType.IMAGE) == GalleryMedia.MediaType.VIDEO:
+            return GalleryMedia.FaceScanStatus.PROCESSED, _encode_video(library, media)
+
         return GalleryMedia.FaceScanStatus.PROCESSED, _encode_faces(library, _load_image_array(media))
     except Exception:
         logger.warning("Face scan failed for gallery media %s.", getattr(media, "pk", "?"), exc_info=True)
@@ -157,8 +306,8 @@ def _scan_one(library, media) -> tuple[str, list[list[float]]]:
 
 def scan_media(media_id: int) -> str | None:
     """Scan one waiting photo. Returns the new status, or None when there
-    was nothing to do (already scanned, deleted, a video, or another
-    process is scanning it right now).
+    was nothing to do (already scanned, deleted, a video this server cannot
+    read, or another process is scanning it right now).
 
     The row stays locked while it is scanned, so two web workers (or a
     worker and the management command) never process the same photo.
@@ -175,7 +324,7 @@ def scan_media(media_id: int) -> str | None:
             GalleryMedia.objects.select_for_update(skip_locked=True)
             .filter(
                 pk=media_id,
-                media_type=GalleryMedia.MediaType.IMAGE,
+                media_type__in=scannable_media_types(),
                 face_scan_status=GalleryMedia.FaceScanStatus.PENDING,
             )
             .first()
@@ -204,8 +353,8 @@ def scan_media(media_id: int) -> str | None:
 # ---------------------------------------------------------------------
 
 def pending_queryset(event_id: int | None = None, respect_plan: bool = True):
-    """Photos waiting to be scanned. With respect_plan (the default) only
-    photos of organizers whose plan includes face search are returned, so
+    """Photos (and videos, when supported) waiting to be scanned. With
+    respect_plan (the default) only photos of organizers whose plan includes face search are returned, so
     a free-plan gallery does not use up server time."""
 
     from django.contrib.auth import get_user_model
@@ -213,7 +362,7 @@ def pending_queryset(event_id: int | None = None, respect_plan: bool = True):
     from .models import GalleryMedia
 
     queryset = GalleryMedia.objects.filter(
-        media_type=GalleryMedia.MediaType.IMAGE,
+        media_type__in=scannable_media_types(),
         face_scan_status=GalleryMedia.FaceScanStatus.PENDING,
     )
 
@@ -264,7 +413,7 @@ def retry_failed(event_id: int | None = None) -> int:
     from .models import GalleryMedia
 
     queryset = GalleryMedia.objects.filter(
-        media_type=GalleryMedia.MediaType.IMAGE,
+        media_type__in=scannable_media_types(),
         face_scan_status=GalleryMedia.FaceScanStatus.FAILED,
     )
 
@@ -349,7 +498,7 @@ def get_face_scan_summary(event) -> dict:
 
     status = GalleryMedia.FaceScanStatus
 
-    counts = event.gallery_media.filter(media_type=GalleryMedia.MediaType.IMAGE).aggregate(
+    counts = event.gallery_media.filter(media_type__in=scannable_media_types()).aggregate(
         total=Count("id"),
         pending=Count("id", filter=Q(face_scan_status=status.PENDING)),
         processed=Count("id", filter=Q(face_scan_status=status.PROCESSED)),
@@ -360,5 +509,6 @@ def get_face_scan_summary(event) -> dict:
         **counts,
         "faces_found": FaceEmbedding.objects.filter(media__event=event).count(),
         "available": face_search_available(),
+        "videos_supported": video_scan_available(),
         "plan_enabled": organizer_has_face_search(event.organizer),
     }

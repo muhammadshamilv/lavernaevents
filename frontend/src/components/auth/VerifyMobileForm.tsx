@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ShieldCheck } from "lucide-react";
+import { ArrowLeft, Phone, ShieldCheck } from "lucide-react";
 import AuthCardLayout from "@/components/auth/AuthCardLayout";
+import { IconField, ResendCode } from "@/components/auth/AuthField";
 import { FormError } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,6 +86,7 @@ export default function VerifyMobileForm() {
 
   return (
     <AuthCardLayout
+      variant="verify"
       icon={<ShieldCheck className="h-7 w-7" />}
       title="Verify your mobile"
       subtitle={
@@ -98,7 +100,8 @@ export default function VerifyMobileForm() {
         )
       }
       footer={
-        <Link to="/login" className="font-semibold text-[var(--brand-pink)]">
+        <Link to="/login" className="inline-flex items-center gap-1.5 font-semibold text-[var(--brand-pink)] hover:underline">
+          <ArrowLeft className="h-4 w-4" />
           Back to sign in
         </Link>
       }
@@ -107,15 +110,18 @@ export default function VerifyMobileForm() {
         {!mobileFromQuery && (
           <div className="space-y-1.5">
             <Label htmlFor="mobile_number">Mobile number</Label>
-            <Input
-              id="mobile_number"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="9876543210 or +91 98765 43210"
-              hasError={!!errors.mobile_number}
-              {...register("mobile_number")}
-            />
+            <IconField icon={Phone}>
+              <Input
+                id="mobile_number"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="9876543210"
+                className="pl-11"
+                hasError={!!errors.mobile_number}
+                {...register("mobile_number")}
+              />
+            </IconField>
             <FormError message={errors.mobile_number?.message} />
           </div>
         )}
@@ -142,33 +148,18 @@ export default function VerifyMobileForm() {
           />
         )}
 
-        <Button type="submit" className="w-full" size="lg" isLoading={verifyMutation.isPending}>
+        <Button type="submit" className="w-full shadow-lg shadow-[var(--brand-pink)]/25" size="lg" isLoading={verifyMutation.isPending}>
           Verify mobile
         </Button>
       </form>
 
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-x-1.5 text-center text-sm text-slate-500">
-        Didn't get a code?
-        <button
-          type="button"
-          onClick={() => sendCode(mobileFromQuery || getValues("mobile_number"))}
-          disabled={cooldown > 0 || resendMutation.isPending}
-          className="font-semibold text-[var(--brand-pink)] disabled:cursor-not-allowed disabled:text-slate-400"
-        >
-          {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
-        </button>
-      </div>
-
-      {resendNotice && !resendMutation.isError && (
-        <p className="mt-2 text-center text-xs text-emerald-600">{resendNotice}</p>
-      )}
-      {resendMutation.isError && (
-        <div className="mt-2">
-          <FormError
-            message={getApiErrorMessage(resendMutation.error, "Could not send a new code.")}
-          />
-        </div>
-      )}
+      <ResendCode
+        cooldown={cooldown}
+        pending={resendMutation.isPending}
+        onResend={() => sendCode(mobileFromQuery || getValues("mobile_number"))}
+        notice={resendNotice}
+        error={resendMutation.isError ? getApiErrorMessage(resendMutation.error, "Could not send a new code.") : undefined}
+      />
     </AuthCardLayout>
   );
 }

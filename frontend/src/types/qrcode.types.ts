@@ -17,7 +17,7 @@ export interface ScannedEvent {
   cover_image: string | null;
 }
 
-/** A matched photo as an anonymous guest sees it. Not the organizer's
+/** A matched photo or video as an anonymous guest sees it. Not the organizer's
  * GalleryMedia: it carries no `uploaded_by` (that is never shown to a
  * guest) but has a ready-made attachment download link. */
 export interface GuestMatchedMedia {
@@ -29,6 +29,8 @@ export interface GuestMatchedMedia {
   created_at: string;
   /** Path (relative to the site origin) that downloads this photo as a file. */
   download_url: string;
+  /** "high" = surely the guest; "possible" = might be (shown in its own list). */
+  match_confidence: "high" | "possible";
 }
 
 export interface SelfieMatchResult {

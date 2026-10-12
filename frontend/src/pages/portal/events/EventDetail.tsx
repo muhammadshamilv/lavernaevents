@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
-  ArrowLeft,
+  ArrowRight,
+  SearchX,
   CalendarDays,
   Camera,
   Clock,
@@ -21,6 +22,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BackLink, IconChip, StateCard } from "@/components/portal/PortalUI";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useDeleteEventMutation,
@@ -106,19 +108,13 @@ export default function EventDetail() {
 
   if (isError || !event) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <Card className="p-8">
-          <p className="text-sm text-slate-500">
-            This event couldn't be found, or you don't have access to it.
-          </p>
-          <Link
-            to="/portal/events"
-            className={buttonVariants({ variant: "outline", className: "mt-6" })}
-          >
-            Back to events
-          </Link>
-        </Card>
-      </div>
+      <StateCard
+        icon={SearchX}
+        title="Event not found"
+        message="This event couldn't be found, or you don't have access to it."
+        to="/portal/events"
+        actionLabel="Back to events"
+      />
     );
   }
 
@@ -146,21 +142,15 @@ export default function EventDetail() {
   return (
     <div className="mobile-safe-bottom px-4 py-6 sm:px-6 sm:py-10 lg:px-10">
       <div className="mx-auto max-w-3xl">
-        <Link
-          to="/portal/events"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[var(--brand-navy)]"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to events
-        </Link>
+        <BackLink to="/portal/events">Back to events</BackLink>
 
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <Card className="mt-4 overflow-hidden">
-            <div className="relative flex h-48 items-center justify-center bg-slate-100 sm:h-56">
+          <Card className="mt-4 overflow-hidden rounded-[2rem]">
+            <div className="relative flex h-52 items-center justify-center bg-slate-100 sm:h-64">
               {coverUrl ? (
                 <img src={coverUrl} alt={event.name} className="h-full w-full object-cover" />
               ) : (
@@ -171,6 +161,7 @@ export default function EventDetail() {
                   <ImageIcon className="h-10 w-10 text-[var(--brand-navy)]/20" />
                 </div>
               )}
+              {coverUrl && <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent" />}
             </div>
 
             <div className="p-5 sm:p-8">
@@ -184,7 +175,7 @@ export default function EventDetail() {
                   >
                     {event.status}
                   </span>
-                  <h1 className="mt-3 text-xl font-bold text-[var(--brand-navy)] sm:text-2xl">
+                  <h1 className="mt-3 break-words text-2xl font-bold tracking-tight text-[var(--brand-navy)] sm:text-3xl">
                     {event.name}
                   </h1>
                   <p className="mt-1 text-sm text-slate-500">
@@ -251,7 +242,7 @@ export default function EventDetail() {
                   <div key={tile.label} className="premium-card p-3.5">
                     <span
                       className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-full",
+                        "flex h-9 w-9 items-center justify-center rounded-xl",
                         accentClass[tile.accent]
                       )}
                     >
@@ -260,7 +251,7 @@ export default function EventDetail() {
                     {statsLoading ? (
                       <Skeleton className="mt-2.5 h-6 w-10" />
                     ) : (
-                      <p className="mt-2.5 text-lg font-bold text-[var(--brand-navy)]">
+                      <p className="mt-2.5 text-xl font-bold tabular-nums text-[var(--brand-navy)]">
                         {tile.value ?? 0}
                       </p>
                     )}
@@ -269,7 +260,7 @@ export default function EventDetail() {
                 ))}
               </div>
 
-              <div className="mt-5 grid gap-4 rounded-2xl bg-[var(--surface-muted)] p-5 sm:grid-cols-2">
+              <div className="mt-5 grid gap-4 rounded-2xl bg-[var(--surface-muted)] p-5 ring-1 ring-slate-100 sm:grid-cols-2">
                 <div className="flex items-center gap-2.5 text-sm text-slate-600">
                   <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
                   {formatEventDate(event.event_date)}
@@ -310,51 +301,47 @@ export default function EventDetail() {
           </Card>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 sm:gap-5">
-            <Link to={`/portal/events/${event.id}/gallery`} className="sm:col-span-2">
+            <Link to={`/portal/events/${event.id}/gallery`} className="group block rounded-3xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/50 sm:col-span-2">
               <Card className="card-hover-lift h-full p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--brand-green)]/12 text-[var(--brand-green-dark)]">
-                      <Camera className="h-5 w-5" />
-                    </span>
+                    <IconChip icon={Camera} accent="green" />
                     <h2 className="font-semibold text-[var(--brand-navy)]">Gallery</h2>
                   </div>
                 </div>
                 <p className="mt-3 text-sm text-slate-500">
                   Upload photos and videos, or invite a photographer to contribute.
                 </p>
-                <p className="mt-4 text-sm font-semibold text-[var(--brand-pink)]">
-                  Manage gallery →
+                <p className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--brand-pink)]">
+                  Manage gallery
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </p>
               </Card>
             </Link>
 
-            <Link to={`/portal/events/${event.id}/qr-code`} className="sm:col-span-2">
+            <Link to={`/portal/events/${event.id}/qr-code`} className="group block rounded-3xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/50 sm:col-span-2">
               <Card className="card-hover-lift h-full p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]">
-                      <QrCode className="h-5 w-5" />
-                    </span>
+                    <IconChip icon={QrCode} accent="navy" />
                     <h2 className="font-semibold text-[var(--brand-navy)]">QR Code</h2>
                   </div>
                 </div>
                 <p className="mt-3 text-sm text-slate-500">
                   Download and print a QR code for guests to scan and find their photos.
                 </p>
-                <p className="mt-4 text-sm font-semibold text-[var(--brand-pink)]">
-                  View QR code →
+                <p className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--brand-pink)]">
+                  View QR code
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </p>
               </Card>
             </Link>
 
-            <Link to={`/portal/events/${event.id}/guests`}>
+            <Link to={`/portal/events/${event.id}/guests`} className="group block rounded-3xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/50">
               <Card className="card-hover-lift h-full p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
-                      <Users className="h-5 w-5" />
-                    </span>
+                    <IconChip icon={Users} accent="pink" />
                     <h2 className="font-semibold text-[var(--brand-navy)]">Guests</h2>
                   </div>
                   {typeof stats?.total_guests === "number" && (
@@ -366,19 +353,18 @@ export default function EventDetail() {
                 <p className="mt-3 text-sm text-slate-500">
                   Manage your guest list and track RSVPs.
                 </p>
-                <p className="mt-4 text-sm font-semibold text-[var(--brand-pink)]">
-                  Manage guests →
+                <p className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--brand-pink)]">
+                  Manage guests
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </p>
               </Card>
             </Link>
 
-            <Link to={`/portal/events/${event.id}/invitations`}>
+            <Link to={`/portal/events/${event.id}/invitations`} className="group block rounded-3xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-pink)]/50">
               <Card className="card-hover-lift h-full p-5 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--brand-navy)]/10 text-[var(--brand-navy)]">
-                      <Mail className="h-5 w-5" />
-                    </span>
+                    <IconChip icon={Mail} accent="navy" />
                     <h2 className="font-semibold text-[var(--brand-navy)]">Invitations</h2>
                   </div>
                   {typeof stats?.notifications_sent === "number" && (
@@ -390,8 +376,9 @@ export default function EventDetail() {
                 <p className="mt-3 text-sm text-slate-500">
                   Send invitations and track delivery status for every guest.
                 </p>
-                <p className="mt-4 text-sm font-semibold text-[var(--brand-pink)]">
-                  View invitations →
+                <p className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--brand-pink)]">
+                  View invitations
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </p>
               </Card>
             </Link>

@@ -13,6 +13,7 @@ const SECTIONS: LegalSection[] = [
   },
   {
     title: "Cancelling",
+    callout: "Plans never renew on their own, so you will not be charged again unless you choose to buy again.",
     items: [
       "Plans are one-time purchases for the period shown and do not renew automatically, so there is nothing to cancel to avoid future charges.",
       "You can stop using the Service at any time. A plan stays active until its end date.",
@@ -71,7 +72,7 @@ export default function Refunds() {
       icon={RotateCcw}
       title="Refunds & Cancellations"
       intro="What happens if you want to cancel, or a payment goes wrong."
-      updated="12 October 2026"
+      updated="13 October 2026"
       sections={SECTIONS}
     />
   );

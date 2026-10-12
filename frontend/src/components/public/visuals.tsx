@@ -178,12 +178,12 @@ export function HeroVisual() {
             <span className="absolute -left-6 -top-8 h-24 w-24 rounded-full border border-[var(--brand-pink)]/25" />
             <span className="absolute -left-2 -top-4 h-16 w-16 rounded-full border border-[var(--brand-pink)]/25" />
             <span className="absolute -bottom-10 -right-6 h-28 w-28 rounded-full border border-[var(--brand-gold)]/50" />
-            <span className="text-3xl font-light tracking-tight text-[var(--brand-navy)]">A &amp; R</span>
+            <span className="text-3xl font-light tracking-tight text-[var(--brand-navy)]">You&apos;re invited</span>
           </div>
           <div className="px-5 pb-5 pt-4 text-center">
-            <p className="text-xs text-slate-400">Together with their families</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight text-[var(--brand-navy)]">Aanya &amp; Rohan</p>
-            <p className="mt-1 text-xs text-slate-500">invite you to celebrate their wedding</p>
+            <p className="text-xs text-slate-400">Save the date</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight text-[var(--brand-navy)]">Your Event Name</p>
+            <p className="mt-1 text-xs text-slate-500">Join us for a day of celebration</p>
             <div className="mt-3 space-y-1 text-xs text-slate-600">
               <p className="flex items-center justify-center gap-1.5">
                 <CalendarDays className="h-3.5 w-3.5 text-[var(--brand-pink)]" />
@@ -191,7 +191,7 @@ export function HeroVisual() {
               </p>
               <p className="flex items-center justify-center gap-1.5">
                 <MapPin className="h-3.5 w-3.5 text-[var(--brand-pink)]" />
-                Kochi
+                Your venue
               </p>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-semibold">
@@ -217,7 +217,7 @@ export function HeroVisual() {
         </span>
         <span className="text-xs leading-snug text-slate-600">
           <span className="block font-semibold text-[var(--brand-navy)]">Invitation sent</span>
-          Aanya &amp; Rohan's wedding
+          Your event name
         </span>
       </motion.div>
 
@@ -370,14 +370,14 @@ export function EventSummaryCard({ className }: { className?: string }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-base font-semibold text-[var(--brand-navy)]">Aanya &amp; Rohan's wedding</p>
+          <p className="text-base font-semibold text-[var(--brand-navy)]">Your event name</p>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
             <CalendarDays className="h-3.5 w-3.5 text-[var(--brand-pink)]" />
             Saturday, 14 February, 6:30 pm
           </p>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
             <MapPin className="h-3.5 w-3.5 text-[var(--brand-pink)]" />
-            Kochi
+            Your venue
           </p>
         </div>
         <span className="rounded-full badge-success px-2.5 py-1 text-[11px] font-semibold">Upcoming</span>

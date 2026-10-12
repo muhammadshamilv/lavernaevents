@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, X } from "lucide-react";
+import { motion } from "framer-motion";
+import { AlertTriangle, CheckCircle2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/card";
-import { useIsDesktop } from "@/hooks/useMediaQuery";
+import { Modal } from "@/components/ui/modal";
 import { useBulkSendInvitations } from "@/queries/useNotificationQueries";
 import { CHANNEL_META } from "@/lib/channels";
 import { cn } from "@/lib/utils";
@@ -31,7 +31,6 @@ export default function BulkSendDialog({
   onClose,
   onDone,
 }: BulkSendDialogProps) {
-  const isDesktop = useIsDesktop();
   const { start, cancel, reset, progress, isRunning, errorMessage } =
     useBulkSendInvitations(eventId);
 
@@ -55,22 +54,8 @@ export default function BulkSendDialog({
     onDone();
   };
 
-  // Escape closes the dialog (never while a run is in progress), and the
-  // browser warns before the tab is closed mid-send.
-  useEffect(() => {
-    if (!open) return;
-
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || isRunning) return;
-      if (phase === "done") handleDone();
-      else handleClose();
-    };
-
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isRunning, phase]);
-
+  // The Modal handles Escape / outside taps (locked while a run is in progress).
+  // The browser warns before the tab is closed mid-send.
   useEffect(() => {
     if (!isRunning) return;
 
@@ -88,34 +73,29 @@ export default function BulkSendDialog({
       ? Math.min(100, Math.round((progress.processed / progress.total) * 100))
       : 0;
 
-  const content = (
-    <div className="p-6 sm:p-8">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-[var(--brand-navy)]">
-            {phase === "done" ? "Sending finished" : `Send via ${meta.label}`}
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {phase === "confirm" && `${count} guest${count === 1 ? "" : "s"} selected`}
-            {phase === "running" && "Please keep this page open until it finishes."}
-            {phase === "done" && "Here's how it went."}
-          </p>
-        </div>
-        {phase !== "running" && (
-          <button
-            type="button"
-            onClick={phase === "done" ? handleDone : handleClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+  const handleModalClose = phase === "done" ? handleDone : handleClose;
+  const description =
+    phase === "confirm"
+      ? `${count} guest${count === 1 ? "" : "s"} selected`
+      : phase === "running"
+        ? "Please keep this page open until it finishes."
+        : "Here's how it went.";
 
+  return (
+    <Modal
+      open={open}
+      onClose={handleModalClose}
+      title={phase === "done" ? "Sending finished" : `Send via ${meta.label}`}
+      description={description}
+      icon={phase === "done" ? CheckCircle2 : Send}
+      tone={phase === "done" ? "success" : "default"}
+      size="md"
+      dismissible={phase !== "running"}
+    >
+      <div className="pb-1">
       {phase === "confirm" && (
-        <div className="mt-6 space-y-4">
-          <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-[image:var(--gradient-brand-soft)] p-4 text-sm text-slate-600 ring-1 ring-[var(--brand-pink)]/10">
             <p>
               Your selected template will be sent to {count} guest{count === 1 ? "" : "s"} by{" "}
               <span className="font-semibold">{meta.label}</span>.
@@ -132,7 +112,7 @@ export default function BulkSendDialog({
             )}
           </div>
 
-          <label className="flex cursor-pointer items-start gap-2.5 text-sm text-slate-600">
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 p-3.5 text-sm text-slate-600 transition-colors hover:border-[var(--brand-pink)]/40">
             <input
               type="checkbox"
               checked={includeAlreadySent}
@@ -159,7 +139,7 @@ export default function BulkSendDialog({
       )}
 
       {phase === "running" && (
-        <div className="mt-6 space-y-4">
+        <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium text-[var(--brand-navy)]">
@@ -167,9 +147,9 @@ export default function BulkSendDialog({
               </span>
               <span className="text-slate-400">{percent}%</span>
             </div>
-            <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-100">
               <motion.div
-                className="h-full rounded-full bg-[var(--brand-pink)]"
+                className="h-full rounded-full bg-[image:var(--gradient-brand)]"
                 animate={{ width: `${percent}%` }}
                 transition={{ duration: 0.3 }}
               />
@@ -189,7 +169,7 @@ export default function BulkSendDialog({
       )}
 
       {phase === "done" && progress && (
-        <div className="mt-6 space-y-4">
+        <div className="space-y-4">
           {progress.total === 0 && !errorMessage && (
             <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
               Nothing to send - every selected guest has already received this over{" "}
@@ -260,47 +240,8 @@ export default function BulkSendDialog({
           </Button>
         </div>
       )}
-    </div>
-  );
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label={`Send via ${meta.label}`}>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-slate-900/40"
-            onClick={phase === "confirm" ? handleClose : undefined}
-          />
-
-          {isDesktop ? (
-            <div className="absolute inset-0 flex items-center justify-center px-4">
-              <motion.div
-                initial={{ opacity: 0, y: 16, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 16, scale: 0.98 }}
-                transition={{ duration: 0.15 }}
-                className="premium-card relative max-h-[90dvh] w-full max-w-lg overflow-y-auto"
-              >
-                {content}
-              </motion.div>
-            </div>
-          ) : (
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ duration: 0.25, ease: "easeOut" }}
-              className="mobile-safe-bottom absolute inset-x-0 bottom-0 max-h-[92dvh] overflow-y-auto rounded-t-3xl bg-white"
-            >
-              {content}
-            </motion.div>
-          )}
-        </div>
-      )}
-    </AnimatePresence>
+      </div>
+    </Modal>
   );
 }
 

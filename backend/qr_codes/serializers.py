@@ -110,10 +110,20 @@ class GuestMediaSerializer(serializers.ModelSerializer):
     file = serializers.SerializerMethodField()
     thumbnail = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
+    match_confidence = serializers.SerializerMethodField()
 
     class Meta:
         model = GalleryMedia
-        fields = ("id", "media_type", "file", "thumbnail", "caption", "created_at", "download_url")
+        fields = (
+            "id",
+            "media_type",
+            "file",
+            "thumbnail",
+            "caption",
+            "created_at",
+            "download_url",
+            "match_confidence",
+        )
         read_only_fields = fields
 
     def get_file(self, media) -> str | None:
@@ -121,6 +131,11 @@ class GuestMediaSerializer(serializers.ModelSerializer):
 
     def get_thumbnail(self, media) -> str | None:
         return _absolute_file_url(self.context.get("request"), media.thumbnail)
+
+    def get_match_confidence(self, media) -> str:
+        """"high" = surely the guest; "possible" = might be (shown apart)."""
+
+        return getattr(media, "match_confidence", "high")
 
     def get_download_url(self, media) -> str:
         token = self.context["token"]

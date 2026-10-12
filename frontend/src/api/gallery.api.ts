@@ -1,6 +1,12 @@
 import { apiClient } from "./client";
 import type { ApiResponse } from "@/types/api.types";
-import type { FaceScanSummary, GalleryMedia, GalleryPage } from "@/types/gallery.types";
+import type {
+  FaceScanSummary,
+  GalleryMedia,
+  GalleryOverviewPage,
+  GalleryOverviewParams,
+  GalleryPage,
+} from "@/types/gallery.types";
 
 // apiClient defaults to a JSON Content-Type, which must be explicitly
 // cleared per-request for axios to send a real multipart body instead of
@@ -71,5 +77,22 @@ export async function startFaceScan(eventId: number): Promise<FaceScanSummary> {
   const { data } = await apiClient.post<ApiResponse<FaceScanSummary>>(
     `/events/${eventId}/gallery/face-scan/`
   );
+  return data.data;
+}
+
+export const GALLERY_OVERVIEW_PAGE_SIZE = 12;
+
+/** The Gallery hub: a page of the organizer's events with their counts. */
+export async function getGalleryOverview(
+  params: GalleryOverviewParams = {}
+): Promise<GalleryOverviewPage> {
+  const { data } = await apiClient.get<ApiResponse<GalleryOverviewPage>>("/gallery/overview/", {
+    params: {
+      page: params.page ?? 1,
+      page_size: GALLERY_OVERVIEW_PAGE_SIZE,
+      ...(params.search ? { search: params.search } : {}),
+      ...(params.photographersOnly ? { photographers: 1 } : {}),
+    },
+  });
   return data.data;
 }

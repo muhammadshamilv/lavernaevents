@@ -53,6 +53,7 @@ const EventEdit = lazy(() => import("./pages/portal/events/EventEdit"));
 const EventGuests = lazy(() => import("./pages/portal/events/EventGuests"));
 const EventInvitations = lazy(() => import("./pages/portal/events/EventInvitations"));
 const EventGallery = lazy(() => import("./pages/portal/events/EventGallery"));
+const PortalGallery = lazy(() => import("./pages/portal/PortalGallery"));
 const EventQRCode = lazy(() => import("./pages/portal/events/EventQRCode"));
 const InvitationTemplates = lazy(() => import("./pages/portal/InvitationTemplates"));
 const Billing = lazy(() => import("./pages/portal/Billing"));
@@ -67,6 +68,7 @@ const AdminUserManagement = lazy(() => import("./pages/admin/UserManagement"));
 const AdminMembershipPlans = lazy(() => import("./pages/admin/MembershipPlans"));
 const AdminInvitationTemplates = lazy(() => import("./pages/admin/InvitationTemplates"));
 const AdminMediaManagement = lazy(() => import("./pages/admin/MediaManagement"));
+const AdminReviews = lazy(() => import("./pages/admin/Reviews"));
 const AdminChannelPools = lazy(() => import("./pages/admin/ChannelPools"));
 const AdminTopupPacks = lazy(() => import("./pages/admin/TopupPacks"));
 const AdminReports = lazy(() => import("./pages/admin/Reports"));
@@ -241,6 +243,7 @@ function AppRoutes() {
           <Route path="plans" element={<AdminMembershipPlans />} />
           <Route path="templates" element={<AdminInvitationTemplates />} />
           <Route path="media" element={<AdminMediaManagement />} />
+          <Route path="reviews" element={<AdminReviews />} />
           <Route path="channel-pools" element={<AdminChannelPools />} />
           <Route path="topup-packs" element={<AdminTopupPacks />} />
           <Route path="reports" element={<AdminReports />} />
@@ -270,15 +273,8 @@ function AppRoutes() {
           {/* Phase 26: organizer-facing usage dashboard + topup pack purchase flow. */}
           <Route path="billing" element={<Billing />} />
 
-          <Route
-            path="gallery"
-            element={
-              <ComingSoon
-                title="Gallery"
-                description="Open an event and use its Gallery tab to manage photos and videos."
-              />
-            }
-          />
+          {/* The Gallery hub: every event with its photos and videos (including photographers' uploads). */}
+          <Route path="gallery" element={<PortalGallery />} />
           <Route path="settings" element={<AccountSettings />} />
           <Route
             path="notifications"

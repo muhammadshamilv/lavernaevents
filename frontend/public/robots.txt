@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /portal
+Disallow: /admin
+Disallow: /photographer
+Disallow: /payment
+
+Sitemap: https://lavernaevents.pages.dev/sitemap.xml

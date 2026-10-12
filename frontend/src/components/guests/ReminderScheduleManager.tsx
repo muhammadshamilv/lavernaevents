@@ -86,14 +86,16 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
   };
 
   if (isLoading) {
-    return <div className="h-9 w-full animate-pulse rounded-full bg-slate-100" />;
+    return <div className="h-24 w-full animate-pulse rounded-3xl bg-slate-100" />;
   }
 
   return (
     <div className="premium-card p-4 lg:p-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <AlarmClock className="h-4 w-4 text-[var(--brand-pink)]" />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+            <AlarmClock className="h-[18px] w-[18px]" />
+          </span>
           <h3 className="text-sm font-semibold text-[var(--brand-navy)]">
             Automatic reminders by category
           </h3>
@@ -102,7 +104,7 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
           <Button
             variant="outline"
             size="sm"
-            className="h-8 rounded-full px-3 text-xs"
+            className="h-9 rounded-full px-3.5 text-xs"
             onClick={() => setAdding(true)}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -111,14 +113,14 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
         )}
       </div>
 
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="mt-2 text-xs leading-relaxed text-slate-500">
         Guests in a category get an automatic reminder (on the same channel as your active
         template) a set number of hours after they're sent an invitation, if they haven't
         responded yet.
       </p>
 
       {adding && (
-        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-3">
+        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-2xl border border-[var(--brand-pink)]/15 bg-[var(--brand-pink)]/[0.03] p-3">
           <div className="min-w-[160px] flex-1">
             <Select
               value={categoryId}
@@ -152,7 +154,7 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
           <button
             type="button"
             onClick={() => setAdding(false)}
-            className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
             aria-label="Cancel"
           >
             <X className="h-4 w-4" />
@@ -166,13 +168,13 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
             <div
               key={schedule.id}
               className={cn(
-                "flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-sm",
+                "flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3.5 py-2 text-sm ring-1 ring-slate-100",
                 !schedule.is_active && "opacity-50"
               )}
             >
               <span className="min-w-0 font-medium text-[var(--brand-navy)]">
                 {schedule.category_name}
-                <span className="ml-2 font-normal text-slate-500">
+                <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs font-normal text-slate-500 ring-1 ring-slate-200">
                   reminds after {schedule.delay_hours}h
                 </span>
               </span>
@@ -188,7 +190,11 @@ export default function ReminderScheduleManager({ eventId }: ReminderScheduleMan
           ))}
         </div>
       ) : (
-        !adding && <p className="mt-3 text-xs text-slate-400">No category reminders set up yet.</p>
+        !adding && (
+          <p className="mt-3 rounded-2xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">
+            No category reminders set up yet.
+          </p>
+        )
       )}
 
       <ConfirmDialog

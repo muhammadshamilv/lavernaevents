@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { RefreshCw, TriangleAlert } from "lucide-react";
 
 interface Props {
   children: ReactNode;
@@ -48,8 +49,11 @@ export default class AppErrorBoundary extends Component<Props, State> {
     const isChunk = CHUNK_ERROR.test(error.message);
 
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center px-4 text-center">
-        <h1 className="text-2xl font-semibold text-[var(--brand-navy)]">
+      <div className="gradient-mesh-subtle flex min-h-screen flex-col items-center justify-center px-4 text-center">
+        <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
+          {isChunk ? <RefreshCw className="h-7 w-7" /> : <TriangleAlert className="h-7 w-7" />}
+        </span>
+        <h1 className="mt-5 text-2xl font-bold tracking-tight text-[var(--brand-navy)]">
           {isChunk ? "A new version is available" : "Something went wrong"}
         </h1>
         <p className="mt-2 max-w-sm text-sm text-slate-500">
@@ -60,8 +64,9 @@ export default class AppErrorBoundary extends Component<Props, State> {
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="mt-6 inline-flex h-11 items-center justify-center rounded-full bg-[var(--brand-pink)] px-6 text-sm font-semibold text-white transition-colors hover:bg-[var(--brand-pink-dark)]"
+          className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[var(--brand-pink)] px-6 text-sm font-semibold text-white shadow-lg shadow-[var(--brand-pink)]/25 transition-all active:scale-95 hover:bg-[var(--brand-pink-dark)]"
         >
+          <RefreshCw className="h-4 w-4" />
           Reload page
         </button>
       </div>
