@@ -131,7 +131,7 @@ class CreateOrderTests(CashfreeTestBase):
         self.assertEqual(payment.status, Payment.Status.CREATED)
         self.assertEqual(payment.amount, Decimal("999.00"))
 
-    def test_doubled_session_id_suffix_is_repaired(self):
+    def test_session_id_is_passed_on_unchanged(self):
         def fake(method, path, payload=None):
             return {"order_id": payload["order_id"], "payment_session_id": "session_xyzpaymentpayment"}
 
@@ -140,7 +140,7 @@ class CreateOrderTests(CashfreeTestBase):
                 "/api/payments/create-checkout-session/", {"plan_slug": "gold"}, format="json"
             )
 
-        self.assertEqual(response.json()["data"]["payment_session_id"], "session_xyzpayment")
+        self.assertEqual(response.json()["data"]["payment_session_id"], "session_xyzpaymentpayment")
 
     @override_settings(PUBLIC_BACKEND_URL="http://localhost:8000")
     def test_notify_url_skipped_on_local_http(self):

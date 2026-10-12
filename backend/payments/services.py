@@ -228,12 +228,8 @@ def _create_cashfree_order(user, order_id: str, price, return_url: str) -> dict:
 
     session_id = data.get("payment_session_id")
 
-    # Cashfree session ids end in a single "payment". Their API sometimes
-    # returns it doubled ("...paymentpayment"), which makes the checkout page
-    # say "Something went wrong". Remove the duplicate.
-    while isinstance(session_id, str) and session_id.endswith("paymentpayment"):
-        session_id = session_id[: -len("payment")]
-
+    # Use the session id EXACTLY as Cashfree returned it. Never trim or edit
+    # it (Cashfree support: even a "...paymentpayment" ending is valid).
     if not session_id or data.get("order_id") != order_id:
         logger.error("Cashfree create-order reply is missing fields: %s", list(data))
 
