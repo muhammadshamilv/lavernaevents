@@ -4,6 +4,12 @@ import { Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import logo from "@/assets/laverna-logo.png";
 import { siteConfig, whatsappLink } from "@/lib/siteConfig";
 
+const LEGAL_LINKS = [
+  { label: "Terms & Conditions", to: "/terms" },
+  { label: "Privacy Policy", to: "/privacy" },
+  { label: "Refunds & Cancellations", to: "/refunds" },
+];
+
 const LINK_GROUPS = [
   {
     title: "Product",
@@ -180,9 +186,20 @@ function Footer() {
       </div>
 
       <div className="border-t border-white/10">
-        <p className="mx-auto max-w-7xl px-5 py-5 text-center text-xs text-white/55 sm:px-8 lg:px-10">
-          © {new Date().getFullYear()} LavernaEvents. All rights reserved.
-        </p>
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-5 py-5 text-center text-xs text-white/55 sm:px-8 lg:px-10">
+          <nav aria-label="Legal" className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+            {LEGAL_LINKS.map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className="text-white/70 transition-colors hover:text-[var(--brand-pink-light)]"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+          <p>© {new Date().getFullYear()} LavernaEvents. All rights reserved.</p>
+        </div>
       </div>
     </footer>
   );

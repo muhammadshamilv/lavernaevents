@@ -32,6 +32,9 @@ const Pricing = lazy(() => import("./pages/public/Pricing"));
 const Gallery = lazy(() => import("./pages/public/Gallery"));
 const FAQ = lazy(() => import("./pages/public/FAQ"));
 const Contact = lazy(() => import("./pages/public/Contact"));
+const Terms = lazy(() => import("./pages/public/Terms"));
+const Privacy = lazy(() => import("./pages/public/Privacy"));
+const Refunds = lazy(() => import("./pages/public/Refunds"));
 const Register = lazy(() => import("./pages/auth/Register"));
 const Login = lazy(() => import("./pages/auth/Login"));
 const VerifyMobile = lazy(() => import("./pages/auth/VerifyMobile"));
@@ -154,6 +157,9 @@ function AppRoutes() {
             <Route path="gallery" element={<Gallery />} />
             <Route path="faq" element={<FAQ />} />
             <Route path="contact" element={<Contact />} />
+            <Route path="terms" element={<Terms />} />
+            <Route path="privacy" element={<Privacy />} />
+            <Route path="refunds" element={<Refunds />} />
           </Route>
         )}
 
