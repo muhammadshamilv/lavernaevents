@@ -242,6 +242,16 @@ def _create_cashfree_order(user, order_id: str, price, return_url: str) -> dict:
             code="gateway_error",
         )
 
+    # Only the length and the last few characters are logged (never the whole
+    # id), enough to spot a malformed session id when debugging checkout.
+    logger.info(
+        "Cashfree order %s created (mode=%s, session id length=%s, ends with %r)",
+        order_id,
+        get_cashfree_mode(),
+        len(session_id),
+        session_id[-12:],
+    )
+
     return {
         "order_id": order_id,
         "payment_session_id": session_id,
