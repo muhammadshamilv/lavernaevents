@@ -223,6 +223,43 @@ class StatusTests(CashfreeTestBase):
         response = self.client.get(f"/api/payments/status/{order_id}/")
         self.assertEqual(response.json()["data"]["status"], "FAILED")
 
+    def test_cancelled_checkout_becomes_failed(self):
+        order_id = self.start_plan_payment()
+        # Cancel: the order stays ACTIVE and no attempt was made / it was dropped.
+        self.fake_cashfree(order_status="ACTIVE", payments=[])
+        response = self.client.get(f"/api/payments/status/{order_id}/")
+        self.assertEqual(response.json()["data"]["status"], "FAILED")
+
+    def test_dropped_attempt_becomes_failed(self):
+        order_id = self.start_plan_payment()
+        self.fake_cashfree(
+            order_status="ACTIVE",
+            payments=[{"payment_status": "USER_DROPPED", "cf_payment_id": 5}],
+        )
+        response = self.client.get(f"/api/payments/status/{order_id}/")
+        self.assertEqual(response.json()["data"]["status"], "FAILED")
+
+    def test_pending_attempt_keeps_waiting(self):
+        order_id = self.start_plan_payment()
+        self.fake_cashfree(
+            order_status="ACTIVE",
+            payments=[{"payment_status": "PENDING", "cf_payment_id": 6}],
+        )
+        response = self.client.get(f"/api/payments/status/{order_id}/")
+        self.assertEqual(response.json()["data"]["status"], "CREATED")
+
+    def test_order_paid_after_cancel_is_still_activated(self):
+        order_id = self.start_plan_payment()
+        self.fake_cashfree(order_status="ACTIVE", payments=[])
+        self.client.get(f"/api/payments/status/{order_id}/")
+        self.assertEqual(Payment.objects.get().status, Payment.Status.FAILED)
+
+        self.fake_cashfree(order_status="PAID")
+        with mock.patch.object(services, "activate_plan_for_user") as activate:
+            services.settle_order(services._fetch_order(order_id), "777")
+        self.assertEqual(Payment.objects.get().status, Payment.Status.PAID)
+        activate.assert_called_once()
+
     def test_wrong_amount_is_never_activated(self):
         order_id = self.start_plan_payment()
         self.fake_cashfree(order_status="PAID", amount="1.00")

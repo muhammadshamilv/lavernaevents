@@ -69,10 +69,10 @@ export default function PaymentSuccess() {
             <>
               <XCircle className="mx-auto h-12 w-12 text-rose-500" />
               <h1 className="mt-4 text-2xl font-bold text-[var(--brand-navy)]">
-                Payment failed
+                Payment not completed
               </h1>
               <p className="mt-2 text-sm text-slate-500">
-                Your payment didn't go through. No charge was made - please try again.
+                The payment was cancelled or didn't go through, so nothing was charged. You can try again whenever you're ready.
               </p>
               <Link
                 to="/pricing"

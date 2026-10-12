@@ -579,9 +579,51 @@ def _reconcile_with_cashfree(order_id: str) -> None:
             settle_order(order, _fetch_success_payment_id(order_id))
         elif order_status in DEAD_ORDER_STATES:
             settle_order(order)
+        elif order_status == "ACTIVE" and _customer_walked_away(order_id):
+            _mark_abandoned(order_id)
 
     except PaymentError as error:
         logger.warning("Could not reconcile order %s: %s", order_id, error)
+
+
+# Attempt states that mean money is, or may be, on its way.
+_IN_FLIGHT_ATTEMPT_STATES = frozenset({"SUCCESS", "PENDING"})
+
+
+def _customer_walked_away(order_id: str) -> bool:
+    """True when the customer is back on our site but nothing was paid.
+
+    Cashfree keeps a cancelled order ACTIVE (the customer could still pay it),
+    so without this the status page would wait for ever after "Cancel".
+    Called only from the status page, i.e. after the customer was sent back.
+    Anything paid or still pending counts as "not walked away"; if Cashfree
+    cannot be asked, the answer is no (the page just keeps waiting).
+    """
+
+    try:
+        attempts = _cashfree_request("GET", f"/orders/{order_id}/payments")
+    except PaymentError:
+        return False
+
+    for attempt in attempts if isinstance(attempts, list) else []:
+        if (attempt.get("payment_status") or "").upper() in _IN_FLIGHT_ATTEMPT_STATES:
+            return False
+
+    return True
+
+
+def _mark_abandoned(order_id: str) -> None:
+    """Close a still-unpaid record. If the customer pays the same order later
+    (browser Back button), the webhook / next status check still marks it PAID.
+    """
+
+    Payment.objects.filter(
+        stripe_checkout_session_id=order_id, status=Payment.Status.CREATED
+    ).update(status=Payment.Status.FAILED, updated_at=timezone.now())
+
+    TopupPurchase.objects.filter(
+        stripe_checkout_session_id=order_id, status=TopupPurchase.Status.CREATED
+    ).update(status=TopupPurchase.Status.FAILED, updated_at=timezone.now())
 
 
 # --------------------------------------------------
