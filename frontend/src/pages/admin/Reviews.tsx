@@ -126,7 +126,7 @@ export default function AdminReviews() {
   const hasFilters = status !== "all" || rating !== null || search !== "";
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
+    <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 sm:space-y-6 sm:px-6 sm:py-8 lg:px-8">
       <PageHeader
         eyebrow="Admin"
         icon={MessageSquareHeart}
@@ -135,6 +135,7 @@ export default function AdminReviews() {
         actions={
           <Button
             variant="outline"
+            className="w-full sm:w-auto"
             onClick={markAllRead}
             isLoading={markAllMutation.isPending}
             disabled={!counts || counts.unread === 0}
@@ -146,7 +147,7 @@ export default function AdminReviews() {
       />
 
       <div className="space-y-3">
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0" role="tablist" aria-label="Filter reviews">
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Filter reviews">
           {TABS.map((tab) => {
             const active = status === tab.value;
             const count = tabCount(tab.value);
@@ -194,7 +195,7 @@ export default function AdminReviews() {
           <Select
             value={rating ?? ""}
             onChange={(event) => setRating(event.target.value ? Number(event.target.value) : null)}
-            className="sm:w-44"
+            className="w-full sm:w-44"
             aria-label="Filter by rating"
           >
             <option value="">All ratings</option>
