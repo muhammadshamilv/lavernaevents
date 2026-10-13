@@ -56,12 +56,10 @@ ERROR_STATUS_MAP = {
     "sms_international_unsupported": status.HTTP_400_BAD_REQUEST,
 }
 
-
 def get_owned_event_or_none(pk: int, user) -> Event | None:
     """Return the event only if it exists and belongs to the requesting user."""
 
     return Event.objects.filter(pk=pk, organizer=user).first()
-
 
 def _event_not_found_response() -> Response:
     return Response(
@@ -73,7 +71,6 @@ def _event_not_found_response() -> Response:
         status=status.HTTP_404_NOT_FOUND,
     )
 
-
 def _guest_not_found_response() -> Response:
     return Response(
         {
@@ -84,7 +81,6 @@ def _guest_not_found_response() -> Response:
         status=status.HTTP_404_NOT_FOUND,
     )
 
-
 def _send_error_response(error, key: str = "invitation") -> Response:
     return Response(
         {
@@ -94,7 +90,6 @@ def _send_error_response(error, key: str = "invitation") -> Response:
         },
         status=ERROR_STATUS_MAP.get(error.code, status.HTTP_400_BAD_REQUEST),
     )
-
 
 class SendInvitationView(APIView):
     """The Guests page's single-guest Send action.
@@ -161,7 +156,6 @@ class SendInvitationView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
-
 class SendBulkInvitationsView(APIView):
     """Send ONE BATCH of a bulk Email / SMS / Voice Call send.
 
@@ -218,7 +212,6 @@ class SendBulkInvitationsView(APIView):
             status=status.HTTP_200_OK,
         )
 
-
 class MarkWhatsAppSentView(APIView):
     """Confirm that the organizer sent the WhatsApp message (retry path only)."""
 
@@ -253,7 +246,6 @@ class MarkWhatsAppSentView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-
 
 class RetryNotificationView(APIView):
     """Retry a failed or unconfirmed notification send."""
@@ -293,7 +285,6 @@ class RetryNotificationView(APIView):
             status=status.HTTP_200_OK,
         )
 
-
 class EventNotificationLogListView(ListAPIView):
     """List notification send logs for an event (status table for the guest list UI)."""
 
@@ -331,7 +322,6 @@ class EventNotificationLogListView(ListAPIView):
             status=status.HTTP_200_OK,
         )
 
-
 # ---------------------------------------------------------------------
 # Twilio webhooks (called BY Twilio, not by our frontend)
 # ---------------------------------------------------------------------
@@ -367,14 +357,12 @@ def _twilio_request_is_genuine(request) -> bool:
 
     return RequestValidator(auth_token).validate(url, params, signature)
 
-
 def _twiml_response(inner: str, http_status: int = status.HTTP_200_OK) -> HttpResponse:
     return HttpResponse(
         f'<?xml version="1.0" encoding="UTF-8"?><Response>{inner}</Response>',
         content_type="text/xml",
         status=http_status,
     )
-
 
 class VoiceTwiMLView(APIView):
     """Return the TwiML Twilio fetches when a voice call connects."""
@@ -409,7 +397,6 @@ class VoiceTwiMLView(APIView):
 
         return _twiml_response(f'<Say voice="{voice}" language="{language}">{escaped_message}</Say>')
 
-
 class TwilioCallStatusCallbackView(APIView):
     """Receive Twilio's final call status and update the NotificationLog."""
 
@@ -433,7 +420,6 @@ class TwilioCallStatusCallbackView(APIView):
         apply_voice_call_status_callback(log, call_status)
 
         return Response(status=status.HTTP_200_OK)
-
 
 # ---------------------------------------------------------------------
 # Reminders
@@ -496,7 +482,6 @@ class SendReminderView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
-
 
 class SendPendingWhatsAppReminderView(APIView):
     """One-click send a queued WhatsApp reminder, then clear it from the

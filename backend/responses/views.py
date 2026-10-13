@@ -1,5 +1,9 @@
+import json
+
 from decouple import config
+from django.conf import settings
 from django.http import HttpResponse
+from django.utils.html import escape
 from django.utils.html import strip_tags
 from guests.models import Guest
 from rest_framework import status
@@ -236,6 +240,78 @@ class InvitationCalendarView(APIView):
         # straight away; ?download=1 forces a file download instead.
         disposition = "attachment" if request.query_params.get("download") else "inline"
         response["Content-Disposition"] = f'{disposition}; filename="{safe_name}.ics"'
+        response["Cache-Control"] = "no-store"
+
+        return response
+
+
+class InvitationSharePreviewView(APIView):
+    """Public endpoint used as the link inside WhatsApp messages.
+
+    Link-preview crawlers (WhatsApp, etc.) do not run JavaScript, so this
+    returns a tiny HTML page whose Open Graph tags carry the invitation
+    card as the preview image. A real guest's browser is sent on to the
+    normal invitation page at once (meta refresh + script). Same access
+    model as the other respond/ endpoints: the unguessable token.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, response_token):
+        try:
+            invitation = get_invitation_by_token(response_token)
+
+        except ResponseError as error:
+            return _error_response(error, "token")
+
+        event = invitation.event
+        guest = invitation.guest
+
+        frontend_url = (
+            getattr(settings, "FRONTEND_GUEST_RESPONSE_URL", "") or "http://localhost:5173/respond"
+        ).rstrip("/")
+        target = f"{frontend_url}/{response_token}"
+
+        image = _file_url(request, invitation.image_file) or _file_url(request, event.cover_image) or ""
+
+        title = f"You are invited: {event.name}"
+
+        parts = [event.event_date.strftime("%A, %d %B %Y")]
+
+        if event.venue_name:
+            parts.append(event.venue_name)
+
+        description = f"Hi {guest.name}, " + " - ".join(parts) + ". Tap to view your invitation and RSVP."
+
+        image_tags = ""
+
+        if image:
+            image_tags = (
+                f'<meta property="og:image" content="{escape(image)}">'
+                f'<meta name="twitter:image" content="{escape(image)}">'
+            )
+
+        html = (
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            f"<title>{escape(title)}</title>"
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<meta name="robots" content="noindex, nofollow">'
+            f'<meta property="og:type" content="website">'
+            f'<meta property="og:site_name" content="LavernaEvents">'
+            f'<meta property="og:title" content="{escape(title)}">'
+            f'<meta property="og:description" content="{escape(description)}">'
+            f'<meta property="og:url" content="{escape(target)}">'
+            f'<meta name="twitter:card" content="summary_large_image">'
+            f"{image_tags}"
+            f'<meta http-equiv="refresh" content="0;url={escape(target)}">'
+            "</head><body>"
+            f'<script>window.location.replace({json.dumps(target)});</script>'
+            f'<p><a href="{escape(target)}">Open your invitation</a></p>'
+            "</body></html>"
+        )
+
+        response = HttpResponse(html, content_type="text/html; charset=utf-8")
         response["Cache-Control"] = "no-store"
 
         return response

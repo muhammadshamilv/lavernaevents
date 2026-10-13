@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import InvitationCalendarView, InvitationResponsePageView
+from .views import InvitationCalendarView, InvitationResponsePageView, InvitationSharePreviewView
 
 
 urlpatterns = [
@@ -13,5 +13,10 @@ urlpatterns = [
         "respond/<str:response_token>/calendar/",
         InvitationCalendarView.as_view(),
         name="invitation-calendar",
+    ),
+    path(
+        "respond/<str:response_token>/share/",
+        InvitationSharePreviewView.as_view(),
+        name="invitation-share",
     ),
 ]

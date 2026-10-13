@@ -75,6 +75,25 @@ def build_response_link(response_token: str) -> str:
     return f"{frontend_url}/{response_token}"
 
 
+def build_share_link(invitation: Invitation) -> str:
+    """Backend link used in WhatsApp messages. Opening it forwards the guest
+    to the normal invitation page, but its HTML carries the card image as
+    the link preview (Open Graph), so WhatsApp shows the card above the
+    message. Returns "" (callers fall back to the plain page link) when
+    there is no card image or no PUBLIC_BACKEND_URL.
+    """
+
+    if not invitation.image_file:
+        return ""
+
+    public_backend_url = config("PUBLIC_BACKEND_URL", default="").rstrip("/")
+
+    if not public_backend_url:
+        return ""
+
+    return f"{public_backend_url}/api/respond/{invitation.response_token}/share/"
+
+
 def build_calendar_link(invitation: Invitation) -> str:
     """Build the guest-facing .ics download link (kept for compatibility;
     the invitation page now carries its own Add to Calendar buttons)."""
@@ -126,6 +145,10 @@ def build_invitation_text(
     part of the email). It mirrors the email: greeting, a short warm
     letter, the key details and ONE link to the invitation page that holds
     the card, the Yes / Maybe / No buttons, the location and Add to Calendar.
+
+    For WhatsApp the link passed in is the "share" link (see
+    build_share_link), whose page carries the card as its preview image, so
+    WhatsApp shows the card on top of this text.
     """
 
     event = invitation.event
@@ -140,7 +163,11 @@ def build_invitation_text(
         else "\U0001F48C *You are invited!*"
     )
 
-    lines = [heading, "", f"Hi {guest.name},", ""]
+    divider = "\u2501" * 12
+
+    lines = []
+
+    lines += [heading, divider, "", f"Hi *{guest.name}*,", ""]
 
     if custom:
         lines += [custom, ""]
@@ -160,11 +187,12 @@ def build_invitation_text(
         lines.append("")
 
     lines += [
-        "\U0001F3B4 Your personal invitation card, RSVP and location:",
+        divider,
+        "\U0001F3B4 *Open your invitation card, RSVP & location:*",
         response_link,
         "",
         "Warm regards,",
-        host or "LavernaEvents",
+        f"*{host or 'LavernaEvents'}*",
     ]
 
     return "\n".join(lines)
@@ -338,6 +366,11 @@ def _build_message_for_channel(invitation: Invitation, channel: str, is_reminder
 
     if channel == NotificationLog.Channel.VOICE_CALL:
         return build_voice_message(invitation)
+
+    if channel == NotificationLog.Channel.WHATSAPP:
+        # The share link shows the invitation card as a picture preview in
+        # WhatsApp and then opens the normal invitation page.
+        response_link = build_share_link(invitation) or response_link
 
     return build_invitation_text(invitation, response_link, channel, is_reminder)
 
@@ -935,6 +968,12 @@ def _attach_invitation_image(invitation: Invitation, active: ActiveFilledTemplat
         )
 
     except Exception:
+        logger.exception(
+            "Invitation card image failed (invitation=%s, guest=%s)",
+            invitation.pk,
+            guest.pk,
+        )
+
         invitation.status = Invitation.Status.FAILED
         invitation.save(update_fields=["status", "updated_at"])
 
@@ -961,7 +1000,14 @@ def _get_or_create_invitation_for_active(active: ActiveFilledTemplate, guest) ->
     existing = Invitation.objects.filter(guest=guest, template=template).first()
 
     if existing is not None:
-        if existing.updated_at < active.updated_at:
+        # Rebuild when the organizer refilled the template, OR when this
+        # invitation never got its card image (e.g. it was created before
+        # the image existed / storage was not ready) although the template
+        # has a background. Without this, such an invitation kept falling
+        # back to the event cover photo on the guest's page forever.
+        missing_image = bool(active.template.background_image) and not existing.image_file
+
+        if missing_image or existing.updated_at < active.updated_at:
             existing.rendered_text = render_active_template_for_guest(active, guest)
             existing.status = Invitation.Status.GENERATED
             existing.save(update_fields=["rendered_text", "status", "updated_at"])
