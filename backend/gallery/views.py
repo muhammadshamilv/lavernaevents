@@ -242,8 +242,19 @@ class EventFaceScanView(APIView):
 
     def get(self, request, event_pk):
         event = self.get_event(request, event_pk)
+        summary = get_face_scan_summary(event)
 
-        return self._payload(event, "Face scan status retrieved successfully.")
+        # A free host sleeps and restarts, which stops a running scan thread
+        # and leaves photos waiting. Opening the gallery picks them up again.
+        # Failed photos are NOT retried here (that is the "Scan again" button),
+        # so this can never loop on a photo that cannot be read.
+        if summary["pending"] and summary["available"] and summary["plan_enabled"]:
+            start_background_scan()
+
+        return Response(
+            {"success": True, "message": "Face scan status retrieved successfully.", "data": summary},
+            status=status.HTTP_200_OK,
+        )
 
     def post(self, request, event_pk):
         event = self.get_event(request, event_pk)
