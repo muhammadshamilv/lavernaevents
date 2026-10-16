@@ -8,7 +8,7 @@ called, so no view file needs editing:
   the table VIEW_RULES below (keyed by the view's class name) is used;
 * every request is ALSO counted against a generous catch-all
   ("user" for signed-in people, "anon" per IP for everyone else);
-* webhook views (signature-checked, called by Cashfree/Twilio servers) are
+* webhook views (signature-checked, called by Cashfree/Plivo servers) are
   exempt, because many requests legitimately come from a few shared IPs.
 
 ``kind`` is what the counter is keyed on:
@@ -50,6 +50,8 @@ VIEW_RULES = {
     # Public guest pages
     "InvitationResponsePageView": (("guest_public", "ip"),),
     "InvitationCalendarView": (("guest_public", "ip"),),
+    "InvitationSharePreviewView": (("guest_public", "ip"),),
+    "PublicReviewsView": (("guest_public", "ip"),),
     "ScannedEventView": (("guest_public", "ip"),),
     "GuestSelfieMatchView": (("selfie", "ip"), ("selfie_hour", "ip")),
     "GuestMediaDownloadView": (("download", "ip"),),
@@ -62,9 +64,9 @@ VIEW_RULES = {
     "SendPendingWhatsAppReminderView": (("send", "user"),),
 }
 
-# Called by Cashfree / Twilio servers; protected by signature checks instead.
+# Called by Cashfree / Plivo servers; protected by signature checks instead.
 EXEMPT_VIEWS = frozenset(
-    {"CashfreeWebhookView", "VoiceTwiMLView", "TwilioCallStatusCallbackView"}
+    {"CashfreeWebhookView", "VoiceAnswerView", "PlivoCallStatusCallbackView"}
 )
 
 # Methods that never change anything are not counted against "send"/"upload"
@@ -72,18 +74,15 @@ EXEMPT_VIEWS = frozenset(
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 WRITE_ONLY_SCOPES = frozenset({"upload", "send"})
 
-
 # --------------------------------------------------------------------
 # Real client IP
 # --------------------------------------------------------------------
-
 
 def _valid_ip(value):
     try:
         return str(ipaddress.ip_address((value or "").strip()))
     except ValueError:
         return None
-
 
 def get_client_ip(request) -> str:
     """The visitor's IP, not a proxy's.
@@ -115,14 +114,12 @@ def get_client_ip(request) -> str:
 
     return _valid_ip(meta.get("REMOTE_ADDR", "")) or "unknown"
 
-
 # --------------------------------------------------------------------
 # Throttle
 # --------------------------------------------------------------------
 
 _RATE_RE = re.compile(r"^\s*(\d+)\s*/\s*(\d*)\s*(s|sec|second|m|min|minute|h|hour|d|day)s?\s*$", re.I)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
-
 
 def parse_rate(rate):
     """'10/min' -> (10, 60); '10/10min' -> (10, 600). None if unparsable."""
@@ -132,7 +129,6 @@ def parse_rate(rate):
         return None
     count, multiplier, unit = match.groups()
     return int(count), int(multiplier or 1) * _UNIT_SECONDS[unit[0].lower()]
-
 
 def _mobile_ident(request):
     """The account named in the body (mobile number, or the email typed on
@@ -159,7 +155,6 @@ def _mobile_ident(request):
     if not digits:
         return None
     return hashlib.sha256(digits.encode()).hexdigest()[:24]
-
 
 class RouteThrottle(BaseThrottle):
     """See the module docstring."""

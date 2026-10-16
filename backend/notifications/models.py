@@ -5,11 +5,12 @@ from django.db import models
 class NotificationLog(TimeStampedModel):
     """Tracks an invitation send attempt through any channel.
 
-    Phase 21: added VOICE_CALL to Channel, and call_sid to store Twilio's
-    CallSid (its reference for this call) - used both for the admin/organizer
-    to look up a call in the Twilio console, and as the row Twilio's status
-    callback updates when the call's outcome becomes known (see
-    notifications/views.py's TwilioCallStatusCallbackView).
+    Phase 21: added VOICE_CALL to Channel, and call_sid to store the voice
+    provider's reference for the call (now Plivo's request id; older rows
+    hold a Twilio CallSid) - used by the admin/organizer to look up a call in
+    the provider's console. The row is updated by the provider's status
+    callback when the call's outcome becomes known (see
+    notifications/views.py's PlivoCallStatusCallbackView).
     """
 
     class Channel(models.TextChoices):
@@ -23,9 +24,9 @@ class NotificationLog(TimeStampedModel):
         SENT = "SENT", "Sent"
         FAILED = "FAILED", "Failed"
         # Phase 21: a voice call is asynchronous - initiating it only
-        # confirms Twilio ACCEPTED the request to place the call, not
+        # confirms Plivo ACCEPTED the request to place the call, not
         # that the guest actually answered. The real outcome arrives
-        # later via Twilio's status callback webhook.
+        # later via Plivo's hangup (status) callback webhook.
         CALLING = "CALLING", "Calling"
 
     invitation = models.ForeignKey(
@@ -54,7 +55,7 @@ class NotificationLog(TimeStampedModel):
     call_sid = models.CharField(
         max_length=64,
         blank=True,
-        help_text="Twilio's CallSid for this call. Populated only for the Voice Call channel.",
+        help_text="Voice provider's id for this call (Plivo request id; older rows hold a Twilio CallSid). Populated only for the Voice Call channel.",
     )
 
     status = models.CharField(

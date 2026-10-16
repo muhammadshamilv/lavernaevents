@@ -528,7 +528,7 @@ FRONTEND_GUEST_RESPONSE_URL = config(
 DEFAULT_COUNTRY_CODE = config("DEFAULT_COUNTRY_CODE", default="91")
 
 # Public address of THIS backend (used in invitation image links and for
-# Twilio voice callbacks). On Render this is your https://<name>.onrender.com URL.
+# Plivo voice callbacks). On Render this is your https://<name>.onrender.com URL.
 PUBLIC_BACKEND_URL = config("PUBLIC_BACKEND_URL", default="")
 
 # Cashfree Payment Gateway (UPI QR / UPI apps / cards / netbanking).
@@ -543,6 +543,13 @@ CASHFREE_API_VERSION = config("CASHFREE_API_VERSION", default="2025-01-01")
 # off (false) only to test; payments are still confirmed by the status page.
 CASHFREE_SEND_NOTIFY_URL = config("CASHFREE_SEND_NOTIFY_URL", default=True, cast=bool)
 
+# Voice calls go through Plivo.
+PLIVO_AUTH_ID = config("PLIVO_AUTH_ID", default="")
+PLIVO_AUTH_TOKEN = config("PLIVO_AUTH_TOKEN", default="")
+PLIVO_FROM_NUMBER = config("PLIVO_FROM_NUMBER", default="")
+
+# Twilio is no longer used for voice. These stay only for the optional
+# SMS_PROVIDER=twilio path and can be left empty.
 TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default="")
 TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default="")
 TWILIO_FROM_NUMBER = config("TWILIO_FROM_NUMBER", default="")

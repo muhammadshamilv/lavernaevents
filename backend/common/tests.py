@@ -28,7 +28,6 @@ RATES = {
     "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
 }
 
-
 class _LoginLike(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -38,7 +37,6 @@ class _LoginLike(APIView):
     def post(self, request):
         return Response({"ok": True})
 
-
 class _Webhook(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -47,11 +45,9 @@ class _Webhook(APIView):
     def post(self, request):
         return Response({"ok": True})
 
-
 _Webhook.__name__ = "CashfreeWebhookView"
 
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "t"}}
-
 
 @override_settings(REST_FRAMEWORK=RATES, CACHES=CACHES, PROXY_SHARED_SECRET="s3cret", TRUSTED_PROXY_COUNT=1)
 class ThrottleTests(SimpleTestCase):
@@ -123,7 +119,6 @@ class ThrottleTests(SimpleTestCase):
         ]
         self.assertEqual(codes, [200, 200, 429])
 
-
 @override_settings(PROXY_SHARED_SECRET="s3cret", TRUSTED_PROXY_COUNT=1)
 class ClientIpTests(SimpleTestCase):
     def setUp(self):
@@ -156,7 +151,6 @@ class ClientIpTests(SimpleTestCase):
     def test_no_trust_uses_socket_address(self):
         self.assertEqual(self._ip(REMOTE_ADDR="5.5.5.5", HTTP_X_FORWARDED_FOR="1.2.3.4"), "5.5.5.5")
 
-
 class ParseRateTests(SimpleTestCase):
     def test_formats(self):
         self.assertEqual(parse_rate("10/min"), (10, 60))
@@ -166,14 +160,12 @@ class ParseRateTests(SimpleTestCase):
         self.assertIsNone(parse_rate("lots"))
         self.assertIsNone(parse_rate(None))
 
-
 def _png_bytes():
     from PIL import Image
 
     buffer = io.BytesIO()
     Image.new("RGB", (4, 4), "red").save(buffer, format="PNG")
     return buffer.getvalue()
-
 
 class ImageContentTests(SimpleTestCase):
     def test_real_png_passes(self):
@@ -191,7 +183,6 @@ class ImageContentTests(SimpleTestCase):
         with self.assertRaises(ValidationError):
             validate_image_content(SimpleUploadedFile("a.png", buffer.getvalue(), "image/png"))
 
-
 # Every endpoint that anyone may call without logging in. Adding a new public
 # endpoint must be a conscious decision: this test fails until it is listed
 # here (and given a throttle rule in common/throttling.py if it is abusable).
@@ -200,11 +191,11 @@ EXPECTED_PUBLIC_VIEWS = {
     "ForgotPasswordView", "ResetPasswordView", "VerifyMobileView", "ResendOTPView",
     "MembershipPlanListView", "MembershipPlanDetailView",
     "CashfreeWebhookView",
-    "InvitationResponsePageView", "InvitationCalendarView",
+    "InvitationResponsePageView", "InvitationCalendarView", "InvitationSharePreviewView",
+    "PublicReviewsView",
     "ScannedEventView", "GuestSelfieMatchView", "GuestMediaDownloadView",
-    "VoiceTwiMLView", "TwilioCallStatusCallbackView",
+    "VoiceAnswerView", "PlivoCallStatusCallbackView",
 }
-
 
 def _iter_view_classes(patterns):
     for pattern in patterns:
@@ -215,13 +206,11 @@ def _iter_view_classes(patterns):
             if cls is not None:
                 yield cls
 
-
 def _is_public(view_class):
     return any(
         isinstance(p, type) and issubclass(p, AllowAny) or p is AllowAny
         for p in getattr(view_class, "permission_classes", [])
     )
-
 
 class PermissionAuditTests(SimpleTestCase):
     def setUp(self):
@@ -257,7 +246,6 @@ class PermissionAuditTests(SimpleTestCase):
         from django.conf import settings
 
         self.assertIn("common.throttling.RouteThrottle", settings.REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"])
-
 
 class BadRequestHardeningTests(SimpleTestCase):
     """Malformed URLs must answer 400, never 500."""

@@ -225,20 +225,32 @@ _ML_MONTHS = [
 ]
 
 
-def get_voice_settings() -> tuple[str, str]:
-    """(Twilio <Say> voice, language code) for the call, chosen by
-    VOICE_CALL_LANGUAGE: "en" (English, India) or "ml" (Malayalam).
+def _voice_language() -> str:
+    """"ml" (Malayalam) or "en" (English), chosen by VOICE_CALL_LANGUAGE."""
 
-    VOICE_CALL_VOICE overrides the voice name if you want another one
-    (see the Text-to-Speech voice list in the Twilio Console).
+    return "ml" if config("VOICE_CALL_LANGUAGE", default="en").strip().lower() == "ml" else "en"
+
+
+def get_voice_settings() -> tuple[str, str]:
+    """(Plivo <Speak> voice, language code) for the call, chosen by
+    VOICE_CALL_LANGUAGE: "en" (English) or "ml" (Malayalam).
+
+    Defaults are Plivo's standard voice with en-GB for English and ml-IN for
+    Malayalam. Override with VOICE_CALL_VOICE (for example "Polly.Aditi")
+    and VOICE_CALL_SPEAK_LANGUAGE (for example "en-IN") once you have
+    confirmed in your Plivo console that the voice / language is available.
     """
 
-    language = config("VOICE_CALL_LANGUAGE", default="en").strip().lower()
+    voice = config("VOICE_CALL_VOICE", default="WOMAN").strip() or "WOMAN"
 
-    if language == "ml":
-        return config("VOICE_CALL_VOICE", default="Google.ml-IN-Standard-A"), "ml-IN"
+    if _voice_language() == "ml":
+        default_language = "ml-IN"
+    else:
+        default_language = "en-GB"
 
-    return config("VOICE_CALL_VOICE", default="Polly.Kajal-Neural"), "en-IN"
+    language = config("VOICE_CALL_SPEAK_LANGUAGE", default=default_language).strip() or default_language
+
+    return voice, language
 
 
 def _spoken_time_ml(value) -> str:
@@ -295,7 +307,7 @@ def build_voice_message(invitation: Invitation) -> str:
     The language follows VOICE_CALL_LANGUAGE ("en" or "ml").
     """
 
-    if get_voice_settings()[1] == "ml-IN":
+    if _voice_language() == "ml":
         return _build_voice_message_ml(invitation)
 
     event = invitation.event
@@ -845,9 +857,53 @@ def _send_via_sms(invitation, message: str, organizer=None, is_reminder: bool = 
     return log
 
 
+def _plivo_failure(exc: Exception, what: str) -> tuple[str, str]:
+    """Turn a Plivo exception into (message for the organizer, text for the
+    log row). Also logs the full error for the server logs."""
+
+    name = exc.__class__.__name__
+    raw = str(exc).strip() or name
+
+    logger.error("Plivo %s failed: %s: %s", what, name, raw)
+
+    lowered = raw.lower()
+
+    if name == "AuthenticationError" or "authentication" in lowered:
+        hint = "Plivo rejected the login (Auth ID / Auth Token are wrong)."
+    elif "credit" in lowered or "balance" in lowered:
+        hint = "The Plivo account has no credit. Please add credit."
+    elif "caller id" in lowered or "source number" in lowered or "from number" in lowered:
+        hint = "The caller number is not allowed on this Plivo account."
+    elif name == "ValidationError":
+        hint = "That mobile number or call setting is not valid."
+    elif "timed out" in lowered or "timeout" in lowered or "connection" in lowered:
+        hint = "Could not reach Plivo. Please try again."
+    else:
+        hint = raw[:140]
+
+    return f"{what} failed: {hint}", f"{name}: {raw}"[:255]
+
+
+def _plivo_call_id(response) -> str:
+    """The id Plivo returns for a placed call (request_uuid), or ""."""
+
+    value = getattr(response, "request_uuid", None)
+
+    if value is None and isinstance(response, dict):
+        value = response.get("request_uuid")
+
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+
+    return str(value or "")
+
+
 def _send_via_voice_call(invitation, message: str, organizer=None, is_reminder: bool = False) -> NotificationLog:
-    """Place an outbound call via Twilio that reads the invitation aloud
-    (see notifications/views.py's VoiceTwiMLView for the voice string)."""
+    """Place an outbound call via Plivo that reads the invitation aloud
+    (see notifications/views.py's VoiceAnswerView for the script).
+
+    Plivo fetches the script from our answer URL when the guest picks up,
+    and reports the final outcome to our hangup (status) URL."""
 
     guest = invitation.guest
 
@@ -858,16 +914,16 @@ def _send_via_voice_call(invitation, message: str, organizer=None, is_reminder: 
         status=NotificationLog.Status.CALLING,
     )
 
-    account_sid = config("TWILIO_ACCOUNT_SID", default="")
-    auth_token = config("TWILIO_AUTH_TOKEN", default="")
-    from_number = config("TWILIO_FROM_NUMBER", default="")
+    auth_id = config("PLIVO_AUTH_ID", default="")
+    auth_token = config("PLIVO_AUTH_TOKEN", default="")
+    from_number = re.sub(r"\D", "", config("PLIVO_FROM_NUMBER", default=""))
     public_backend_url = config("PUBLIC_BACKEND_URL", default="").rstrip("/")
 
-    if not (account_sid and auth_token and from_number and public_backend_url):
+    if not (auth_id and auth_token and from_number and public_backend_url):
         log.status = NotificationLog.Status.FAILED
         log.failure_reason = (
-            "Voice calling is not configured (Twilio SID / token / from number "
-            "or PUBLIC_BACKEND_URL missing)."
+            "Voice calling is not configured (Plivo Auth ID / Auth Token / caller "
+            "number or PUBLIC_BACKEND_URL missing)."
         )
         log.save(update_fields=["status", "failure_reason", "updated_at"])
 
@@ -876,47 +932,29 @@ def _send_via_voice_call(invitation, message: str, organizer=None, is_reminder: 
             code="voice_not_configured",
         )
 
-    client = _twilio_client(account_sid, auth_token)
+    # Plivo wants plain digits with the country code and no "+".
+    to_number = normalize_phone_digits(guest.mobile_number)
 
-    twiml_url = f"{public_backend_url}/api/notifications/voice/twiml/{log.pk}/"
-    status_callback_url = f"{public_backend_url}/api/notifications/voice/status/{log.pk}/"
-
-    call_args = dict(
-        to=_format_e164(guest.mobile_number),
-        from_=from_number,
-        url=twiml_url,
-    )
-
-    # Ask Twilio to report the call's outcome back to us. Trial accounts
-    # may not use these extra parameters ("limited parameter access"); in
-    # that case the call is placed without them and counted as sent.
-    use_callback = config("TWILIO_VOICE_STATUS_CALLBACK", default=True, cast=bool)
-    callback_args = dict(
-        status_callback=status_callback_url,
-        status_callback_event=["completed", "no-answer", "busy", "failed"],
-        status_callback_method="POST",
-    )
-
-    call = None
-    callback_used = False
+    answer_url = f"{public_backend_url}/api/notifications/voice/answer/{log.pk}/"
+    hangup_url = f"{public_backend_url}/api/notifications/voice/status/{log.pk}/"
 
     try:
-        if use_callback:
-            try:
-                call = client.calls.create(**call_args, **callback_args)
-                callback_used = True
+        import plivo
 
-            except Exception as exc:
-                if "parameter" not in str(getattr(exc, "msg", "") or exc).lower():
-                    raise
+        client = plivo.RestClient(auth_id, auth_token, timeout=15)
 
-                logger.warning("Twilio rejected status callback params (trial?); retrying without them")
-
-        if call is None:
-            call = client.calls.create(**call_args)
+        response = client.calls.create(
+            from_=from_number,
+            to_=to_number,
+            answer_url=answer_url,
+            answer_method="POST",
+            hangup_url=hangup_url,
+            hangup_method="POST",
+            ring_timeout=config("PLIVO_RING_TIMEOUT", default=45, cast=int),
+        )
 
     except Exception as exc:
-        shown, reason = _twilio_failure(exc, "Call")
+        shown, reason = _plivo_failure(exc, "Call")
 
         log.status = NotificationLog.Status.FAILED
         log.failure_reason = reason
@@ -924,14 +962,8 @@ def _send_via_voice_call(invitation, message: str, organizer=None, is_reminder: 
 
         raise NotificationError(shown, code="voice_call_failed")
 
-    log.call_sid = call.sid
-
-    if callback_used:
-        log.save(update_fields=["call_sid", "updated_at"])
-    else:
-        # No callback will arrive to finish the log, so record it now.
-        log.status = NotificationLog.Status.SENT
-        log.save(update_fields=["call_sid", "status", "updated_at"])
+    log.call_sid = _plivo_call_id(response)[:64]
+    log.save(update_fields=["call_sid", "updated_at"])
 
     return log
 
@@ -1211,7 +1243,7 @@ def mark_whatsapp_as_sent(log: NotificationLog) -> NotificationLog:
 
 
 def apply_voice_call_status_callback(log: NotificationLog, call_status: str) -> NotificationLog:
-    """Update a voice call's log based on Twilio's status callback.
+    """Update a voice call's log based on Plivo's hangup (status) callback.
 
     Only a call that is still CALLING can change: a repeated or late
     callback never overwrites a result that is already recorded.
@@ -1229,7 +1261,9 @@ def apply_voice_call_status_callback(log: NotificationLog, call_status: str) -> 
         guest.invitation_status = guest.InvitationStatus.SENT
         guest.save(update_fields=["invitation_status", "updated_at"])
 
-    elif call_status in ("no-answer", "busy", "failed", "canceled"):
+    elif call_status in (
+        "no-answer", "busy", "failed", "canceled", "cancel", "timeout", "rejected",
+    ):
         log.status = NotificationLog.Status.FAILED
         log.failure_reason = f"Call ended: {call_status}"
         log.save(update_fields=["status", "failure_reason", "updated_at"])

@@ -1,3 +1,5 @@
+import logging
+
 from common.permissions import IsOrganizer
 from events.models import Event
 from guests.models import Guest
@@ -27,6 +29,8 @@ from .services import (
     send_bulk_invitations,
     send_reminder_to_guest,
 )
+
+logger = logging.getLogger(__name__)
 
 ERROR_STATUS_MAP = {
     "template_not_found": status.HTTP_404_NOT_FOUND,
@@ -323,28 +327,28 @@ class EventNotificationLogListView(ListAPIView):
         )
 
 # ---------------------------------------------------------------------
-# Twilio webhooks (called BY Twilio, not by our frontend)
+# Plivo webhooks (called BY Plivo, not by our frontend)
 # ---------------------------------------------------------------------
 #
 # No cookie / JWT is possible here, so both views are AllowAny. They are
-# protected by checking Twilio's X-Twilio-Signature header against
-# TWILIO_AUTH_TOKEN, so only Twilio can read a call's script or report its
-# result. Set TWILIO_VALIDATE_SIGNATURE=False only for local experiments.
+# protected by checking Plivo's X-Plivo-Signature-V3 header against
+# PLIVO_AUTH_TOKEN, so only Plivo can read a call's script or report its
+# result. Set PLIVO_VALIDATE_SIGNATURE=False only for local experiments.
 
-def _twilio_request_is_genuine(request) -> bool:
+def _plivo_request_is_genuine(request) -> bool:
     from decouple import config
 
-    if not config("TWILIO_VALIDATE_SIGNATURE", default=True, cast=bool):
+    if not config("PLIVO_VALIDATE_SIGNATURE", default=True, cast=bool):
         return True
 
-    auth_token = config("TWILIO_AUTH_TOKEN", default="")
+    auth_token = config("PLIVO_AUTH_TOKEN", default="")
+    signature = request.META.get("HTTP_X_PLIVO_SIGNATURE_V3", "")
+    nonce = request.META.get("HTTP_X_PLIVO_SIGNATURE_V3_NONCE", "")
 
-    if not auth_token:
+    if not (auth_token and signature and nonce):
         return False
 
-    from twilio.request_validator import RequestValidator
-
-    # Twilio signed the PUBLIC url it called, which behind a proxy is not
+    # Plivo signed the PUBLIC url it called, which behind a proxy is not
     # the url Django sees - so rebuild it from PUBLIC_BACKEND_URL.
     public_base = (getattr(settings, "PUBLIC_BACKEND_URL", "") or "").rstrip("/")
     url = f"{public_base}{request.path}" if public_base else request.build_absolute_uri()
@@ -353,25 +357,35 @@ def _twilio_request_is_genuine(request) -> bool:
         url = f"{url}?{request.META['QUERY_STRING']}"
 
     params = {key: value for key, value in request.POST.items()}
-    signature = request.META.get("HTTP_X_TWILIO_SIGNATURE", "")
 
-    return RequestValidator(auth_token).validate(url, params, signature)
+    try:
+        from plivo.utils import validate_v3_signature
 
-def _twiml_response(inner: str, http_status: int = status.HTTP_200_OK) -> HttpResponse:
+        return bool(
+            validate_v3_signature(request.method, url, nonce, auth_token, signature, params)
+        )
+
+    except Exception:
+        logger.exception("Plivo signature check could not run")
+        return False
+
+
+def _plivo_xml_response(inner: str, http_status: int = status.HTTP_200_OK) -> HttpResponse:
     return HttpResponse(
         f'<?xml version="1.0" encoding="UTF-8"?><Response>{inner}</Response>',
         content_type="text/xml",
         status=http_status,
     )
 
-class VoiceTwiMLView(APIView):
-    """Return the TwiML Twilio fetches when a voice call connects."""
+
+class VoiceAnswerView(APIView):
+    """Return the Plivo XML Plivo fetches when a voice call is answered."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def post(self, request, log_pk):
-        if not _twilio_request_is_genuine(request):
+        if not _plivo_request_is_genuine(request):
             return HttpResponse("Forbidden", status=status.HTTP_403_FORBIDDEN)
 
         log = NotificationLog.objects.filter(
@@ -380,31 +394,35 @@ class VoiceTwiMLView(APIView):
         ).select_related("invitation", "invitation__event", "invitation__guest").first()
 
         if log is None:
-            return _twiml_response("<Say>Invitation not found.</Say>", status.HTTP_404_NOT_FOUND)
+            return _plivo_xml_response("<Speak>Invitation not found.</Speak>", status.HTTP_404_NOT_FOUND)
 
         message = build_voice_message(log.invitation)
 
-        # Voice name + language come from VOICE_CALL_LANGUAGE ("en" / "ml").
+        # Voice + language come from VOICE_CALL_LANGUAGE ("en" / "ml").
         voice, language = get_voice_settings()
 
         escaped_message = (
             message.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
-            .replace('"', "&quot;")
-            .replace("'", "&apos;")
         )
 
-        return _twiml_response(f'<Say voice="{voice}" language="{language}">{escaped_message}</Say>')
+        escaped_voice = voice.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+        escaped_language = language.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
 
-class TwilioCallStatusCallbackView(APIView):
-    """Receive Twilio's final call status and update the NotificationLog."""
+        return _plivo_xml_response(
+            f'<Speak voice="{escaped_voice}" language="{escaped_language}">{escaped_message}</Speak>'
+        )
+
+
+class PlivoCallStatusCallbackView(APIView):
+    """Receive Plivo's hangup callback and update the NotificationLog."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def post(self, request, log_pk):
-        if not _twilio_request_is_genuine(request):
+        if not _plivo_request_is_genuine(request):
             return HttpResponse("Forbidden", status=status.HTTP_403_FORBIDDEN)
 
         log = NotificationLog.objects.filter(
@@ -415,11 +433,12 @@ class TwilioCallStatusCallbackView(APIView):
         if log is None:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
-        call_status = request.data.get("CallStatus", "")
+        call_status = str(request.data.get("CallStatus", "")).strip().lower()
 
         apply_voice_call_status_callback(log, call_status)
 
         return Response(status=status.HTTP_200_OK)
+
 
 # ---------------------------------------------------------------------
 # Reminders

@@ -1,93 +1,123 @@
-import { Link } from "react-router-dom";
-import { Check, Tag } from "lucide-react";
-import { usePageMeta } from "@/hooks/usePageMeta";
-import CtaBand from "@/components/public/CtaBand";
-import FaqAccordion from "@/components/public/FaqAccordion";
-import { FAQ_GROUPS } from "@/components/public/faqData";
-import PageHero from "@/components/public/PageHero";
-import Reveal, { Stagger, StaggerItem } from "@/components/public/Reveal";
-import SectionHeading from "@/components/public/SectionHeading";
-import PricingGrid from "@/components/membership/PricingGrid";
+import { ShieldCheck } from "lucide-react";
+import LegalPage, { type LegalSection } from "@/components/public/LegalPage";
+import { siteConfig } from "@/lib/siteConfig";
 
-const ALL_PLANS_INCLUDE = [
-  "Secure event photo storage",
-  "Personal invitation links for every guest",
-  "Live RSVP tracking",
-  "Works on any phone, with nothing to install",
-  "Upgrade whenever your event grows",
-  "Extra invitations available as topup packs",
+const { name, contact } = siteConfig;
+
+const SECTIONS: LegalSection[] = [
+  {
+    title: "What this policy covers",
+    paragraphs: [
+      `This policy explains what personal information ${name} collects, why, who it is shared with, and the choices you have. It covers organizers and photographers who sign up, guests who receive an invitation, and anyone who uses an event's photo link.`,
+    ],
+  },
+  {
+    title: "Information we collect",
+    items: [
+      "Account details: your name, mobile number and email address, an optional profile photo, and your password (kept only in a hashed form we cannot read back).",
+      "Event details you enter: event names, dates and places, and the names, mobile numbers and email addresses of the guests you add.",
+      "Guest replies: the RSVP answers guests submit.",
+      "Photos and videos uploaded to an event gallery.",
+      "Records of the invitations and reminders sent from your account, so you can see their status.",
+      "A review, if you choose to write one: the name you enter, an optional title, a star rating and your text.",
+      "Payment records: the plan or pack bought, the amount, the order and payment reference and its status. We do not receive or store your card number, UPI PIN or bank account details.",
+      "Basic technical data such as your IP address and browser type, used for security and to limit abuse.",
+    ],
+  },
+  {
+    title: "Photos, faces and selfies",
+    paragraphs: [
+      "When an event uses photo sharing, we scan the photos in its gallery for faces and keep a set of numbers describing each face in our database. This face data is used only so people at that event can find the photos they appear in, and it is removed when the photo is deleted.",
+      "When a guest takes a selfie to search, the selfie is read in memory to find matching photos and is not saved. We keep only a simple count of how many searches and matches an event had. It is not linked to a name, an RSVP or an account.",
+    ],
+    callout:
+      "Organizers choose which photos to upload and who receives the event's QR code or link. Photo search is available only to people who have that link.",
+  },
+  {
+    title: "How we use it",
+    items: [
+      "To run the Service: create your account, send invitations, collect RSVPs and show galleries.",
+      "To verify your mobile number and keep your account secure.",
+      "To take payments and activate your plan or topup.",
+      "To send you service messages such as one-time codes and payment confirmations.",
+      "To show a review on this website, only after we have read and approved it.",
+      "To prevent fraud and misuse, and to fix problems.",
+    ],
+  },
+  {
+    title: "Guest details you add",
+    paragraphs: [
+      "If you add guests, you decide who to invite and you are responsible for having a good reason to contact them. We handle their details only to provide the Service to you, such as sending the invitation and recording their reply. We do not use guest details for our own marketing.",
+    ],
+  },
+  {
+    title: "Who we share it with",
+    paragraphs: [
+      "We do not sell your personal information. We share it only with the service providers that help us run the Service, and only what each needs for its job:",
+    ],
+    items: [
+      "Cashfree Payments, to process payments.",
+      "Brevo (email), Fast2SMS (SMS) and Plivo (voice calls), to deliver the messages you send.",
+      "Supabase (database and file storage), Render (servers) and Cloudflare (website delivery), to host the Service.",
+      "Authorities, when the law requires it.",
+    ],
+    callout:
+      "WhatsApp invitations are not sent by us. The app opens WhatsApp on your own device with the message ready, and you send it from your own account. WhatsApp's own terms and privacy policy apply to that message. Some of our providers may store or process data on servers outside India.",
+  },
+  {
+    title: "Cookies",
+    paragraphs: [
+      "We use essential cookies to keep you signed in and your account secure. We do not use advertising cookies.",
+    ],
+  },
+  {
+    title: "How long we keep it",
+    paragraphs: [
+      "We keep your account details while your account is open. Events, guest lists and photos stay until you delete them or ask us to, and we do not delete them automatically, so please remove anything you no longer need. Payment records are kept for as long as the law and our accounting require.",
+    ],
+  },
+  {
+    title: "Keeping your information safe",
+    paragraphs: [
+      "We use encrypted connections (HTTPS), hashed passwords and access controls, and we limit how often sign-in and code requests can be made. No system is completely secure, so please keep your password private and tell us straight away if you think your account was misused.",
+    ],
+  },
+  {
+    title: "Your choices",
+    paragraphs: [
+      `You can view and update your name and photo in Account settings, and delete photos from a gallery yourself. To ask us to correct or delete other information, including a guest's details, your account or a review you wrote, email ${contact.email}. Where India's Digital Personal Data Protection Act, 2023 or other law gives you rights over your data, we will honour them. Guests who do not want to receive invitations can tell the organizer or us, and we will help stop them.`,
+    ],
+  },
+  {
+    title: "Children",
+    paragraphs: [
+      "The Service is meant for adults who organize events. We do not knowingly collect personal information from children for their own accounts.",
+    ],
+  },
+  {
+    title: "Changes to this policy",
+    paragraphs: [
+      "We may update this policy from time to time. The date at the top shows when it last changed.",
+    ],
+  },
+  {
+    title: "Contact",
+    paragraphs: [
+      `For any privacy question or request, email ${contact.email}${contact.phone ? `, call ${contact.phone}` : ""}, or write to ${contact.location}.`,
+    ],
+  },
 ];
 
-const BILLING_FAQS = FAQ_GROUPS.find((group) => group.id === "billing")?.items ?? [];
-
-export default function Pricing() {
-  usePageMeta(
-    "Pricing",
-    "Simple plans for every guest list. Compare events, guests, invitations and storage, and upgrade whenever your event grows."
-  );
-
+export default function Privacy() {
   return (
-    <div>
-      <PageHero
-        icon={Tag}
-        eyebrow="Pricing"
-        title="Simple plans that grow with your guest list"
-        description="Choose the plan that fits how you're planning. Upgrade any time as your event grows."
-      />
-
-      <PricingGrid hideHeader />
-
-      <section className="px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
-        <div className="mx-auto max-w-6xl">
-          <Reveal>
-            <SectionHeading eyebrow="Every plan" title="What's included, whichever you choose" align="center" />
-          </Reveal>
-          <Stagger className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-2" gap={0.06}>
-            {ALL_PLANS_INCLUDE.map((line) => (
-              <StaggerItem key={line}>
-                <div className="card-hover-lift flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-sm text-slate-600 soft-shadow">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--brand-green)]/15 text-[var(--brand-green-dark)] ring-4 ring-[var(--brand-green)]/10">
-                    <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                  </span>
-                  {line}
-                </div>
-              </StaggerItem>
-            ))}
-          </Stagger>
-        </div>
-      </section>
-
-      {BILLING_FAQS.length > 0 && (
-        <section className="px-4 pb-4 sm:px-6 lg:px-8">
-          <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
-            <Reveal>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--brand-pink)]">Billing</p>
-              <h2 className="text-balance text-2xl font-semibold tracking-tight text-[var(--brand-navy)] sm:text-4xl">
-                Questions about plans and payment
-              </h2>
-              <p className="mt-3 text-slate-500 sm:text-lg">
-                Payments are handled by Cashfree's secure checkout. See our refund terms on the{" "}
-                <Link to="/refunds" className="font-semibold text-[var(--brand-pink)] hover:underline">
-                  Refunds &amp; Cancellations
-                </Link>{" "}
-                page.
-              </p>
-            </Reveal>
-            <Reveal delay={0.1}>
-              <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white px-5 soft-shadow-lg sm:px-8">
-                <FaqAccordion items={BILLING_FAQS} />
-              </div>
-            </Reveal>
-          </div>
-        </section>
-      )}
-
-      <CtaBand
-        title="Not sure which plan fits?"
-        description="Tell us about your event and we'll help you choose."
-        primary={{ label: "Talk to us", to: "/contact" }}
-        secondary={{ label: "See all features", to: "/features" }}
-      />
-    </div>
+    <LegalPage
+      metaTitle="Privacy Policy"
+      metaDescription={`How ${name} collects, uses and protects personal information, including photos and face search.`}
+      icon={ShieldCheck}
+      title="Privacy Policy"
+      intro={`What ${name} collects, why, who sees it, and the choices you have.`}
+      updated="13 October 2026"
+      sections={SECTIONS}
+    />
   );
 }

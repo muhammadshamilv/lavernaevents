@@ -126,7 +126,7 @@ function TopupFormDialog({ pool, onClose }: { pool: PlatformChannelPool; onClose
 
         <div className="space-y-1.5">
           <Label htmlFor="note">Note (optional)</Label>
-          <Input id="note" placeholder="e.g. Monthly Twilio top-up" hasError={!!errors.note} {...register("note")} />
+          <Input id="note" placeholder="e.g. Monthly SMS or voice credit top-up" hasError={!!errors.note} {...register("note")} />
           <FormError message={errors.note?.message} />
         </div>
 

@@ -7,11 +7,10 @@ from .views import (
     SendBulkInvitationsView,
     SendInvitationView,
     SendPendingWhatsAppReminderView,
+    PlivoCallStatusCallbackView,
     SendReminderView,
-    TwilioCallStatusCallbackView,
-    VoiceTwiMLView,
+    VoiceAnswerView,
 )
-
 
 urlpatterns = [
     path(
@@ -39,15 +38,15 @@ urlpatterns = [
         EventNotificationLogListView.as_view(),
         name="event-notification-logs",
     ),
-    # Twilio webhooks - called by Twilio's servers, not the frontend.
+    # Plivo webhooks - called by Plivo's servers, not the frontend.
     path(
-        "notifications/voice/twiml/<int:log_pk>/",
-        VoiceTwiMLView.as_view(),
-        name="voice-twiml",
+        "notifications/voice/answer/<int:log_pk>/",
+        VoiceAnswerView.as_view(),
+        name="voice-answer",
     ),
     path(
         "notifications/voice/status/<int:log_pk>/",
-        TwilioCallStatusCallbackView.as_view(),
+        PlivoCallStatusCallbackView.as_view(),
         name="voice-status-callback",
     ),
     path(
