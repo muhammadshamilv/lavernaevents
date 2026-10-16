@@ -1,26 +1,23 @@
+import fullLogo from "@/assets/laverna-logo-full.png";
 import mark from "@/assets/laverna-mark.png";
 import { cn } from "@/lib/utils";
 
 // The one place the LavernaEvents logo is drawn, so it looks identical in
 // the navbar, footer, sidebars and sign-in screens.
 //
-// It is the trimmed brand mark (a transparent PNG with no empty margins)
-// plus the name set as real text. Text stays sharp at every size and screen
-// density, which a small picture of a wide lockup never does.
+// It shows the real brand artwork (laverna-logo-full.png: the mark, the
+// heart flourish, LAVERNA, EVENTS and the colour lines), trimmed of empty
+// margins. Nothing is redrawn or retyped.
 
 export type LogoSize = "sm" | "md" | "lg" | "xl";
 
-const SIZES: Record<LogoSize, { mark: number; name: number; events: number; gap: number }> = {
-  sm: { mark: 30, name: 15, events: 7.5, gap: 8 },
-  md: { mark: 40, name: 20, events: 9.5, gap: 10 },
-  lg: { mark: 52, name: 26, events: 12, gap: 12 },
-  xl: { mark: 76, name: 38, events: 17, gap: 18 },
-};
+// Display height of the artwork in px. Width follows the picture's shape.
+const HEIGHTS: Record<LogoSize, number> = { sm: 36, md: 48, lg: 62, xl: 110 };
 
-// Intrinsic size of laverna-mark.png - lets the browser reserve the space
-// before the image loads, so nothing jumps.
-const MARK_WIDTH = 253;
-const MARK_HEIGHT = 317;
+// Intrinsic sizes - lets the browser reserve the space before the image
+// loads, so nothing jumps.
+const FULL = { width: 879, height: 321 };
+const MARK = { width: 253, height: 317 };
 
 export default function Logo({
   size = "md",
@@ -29,60 +26,35 @@ export default function Logo({
   className,
 }: {
   size?: LogoSize;
-  /** "dark" for white/light backgrounds, "light" for navy or gradient ones. */
+  /** "dark" for white/light backgrounds, "light" for navy or gradient ones
+   *  (the artwork sits on a white tile so its dark lettering stays readable). */
   tone?: "dark" | "light";
   showWordmark?: boolean;
   className?: string;
 }) {
-  const s = SIZES[size];
+  const h = HEIGHTS[size];
   const onDark = tone === "light";
+  const art = showWordmark ? FULL : MARK;
 
   return (
-    <span className={cn("inline-flex select-none items-center", className)} style={{ gap: s.gap }}>
-      <span
-        className={cn(
-          "flex shrink-0 items-center justify-center",
-          onDark && "rounded-xl bg-white shadow-sm"
-        )}
-        style={onDark ? { padding: Math.max(4, s.mark * 0.1) } : undefined}
-      >
-        <img
-          src={mark}
-          alt={showWordmark ? "" : "LavernaEvents"}
-          width={MARK_WIDTH}
-          height={MARK_HEIGHT}
-          draggable={false}
-          decoding="async"
-          style={{ height: s.mark, width: "auto" }}
-        />
-      </span>
-
-      {showWordmark && (
-        <span className="flex flex-col" style={{ gap: s.name * 0.2 }}>
-          <span
-            className={cn(
-              "font-semibold uppercase leading-none",
-              onDark ? "text-white" : "text-[var(--brand-navy)]"
-            )}
-            style={{ fontSize: s.name, letterSpacing: "0.1em" }}
-          >
-            Laverna
-          </span>
-          <span className="flex items-center" style={{ fontSize: s.events, gap: "0.7em" }} aria-hidden="true">
-            <span className="h-px flex-1 bg-[var(--brand-pink)]/60" />
-            <span
-              className={cn(
-                "font-semibold uppercase leading-none",
-                onDark ? "text-[var(--brand-pink-light)]" : "text-[var(--brand-pink)]"
-              )}
-              style={{ letterSpacing: "0.36em", marginRight: "-0.36em" }}
-            >
-              Events
-            </span>
-            <span className="h-px flex-1 bg-[var(--brand-green)]/70" />
-          </span>
-        </span>
+    <span
+      className={cn(
+        "inline-flex max-w-full select-none items-center justify-center",
+        onDark && "rounded-xl bg-white shadow-sm",
+        className
       )}
+      style={onDark ? { padding: `${Math.round(h * 0.14)}px ${Math.round(h * 0.2)}px` } : undefined}
+    >
+      <img
+        src={showWordmark ? fullLogo : mark}
+        alt="LavernaEvents"
+        width={art.width}
+        height={art.height}
+        draggable={false}
+        decoding="async"
+        className="max-w-full"
+        style={{ height: h, width: "auto" }}
+      />
     </span>
   );
 }
