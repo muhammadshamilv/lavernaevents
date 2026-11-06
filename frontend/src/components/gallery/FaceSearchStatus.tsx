@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle, CheckCircle2, ScanFace } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { PulsingDots } from "@/components/ui/pulsing-dots";
 import { useFaceScanStatus, useStartFaceScanMutation } from "@/queries/useGalleryQueries";
 import { getApiErrorMessage } from "@/lib/apiError";
 
@@ -76,22 +78,13 @@ export default function FaceSearchStatus({ eventId }: Props) {
             <p className="text-sm font-semibold text-[var(--brand-navy)]">{title}</p>
             {canScan && scanning && <span className="text-xs font-semibold tabular-nums text-[var(--brand-pink)]">{percent}%</span>}
           </div>
-          <p className="mt-0.5 text-sm leading-relaxed text-slate-500">{text}</p>
+          <p className="mt-0.5 text-sm leading-relaxed text-slate-500">
+            {text}
+            {canScan && scanning && <PulsingDots size="sm" decorative className="ml-2 align-middle" />}
+          </p>
 
           {canScan && scanning && (
-            <div
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-              aria-label="Photos scanned"
-              className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100"
-            >
-              <div
-                className="h-full rounded-full bg-[image:var(--gradient-brand)] transition-[width] duration-500"
-                style={{ width: `${Math.max(percent, 4)}%` }}
-              />
-            </div>
+            <ProgressBar className="mt-3" label="Photos scanned" value={percent} minFill={4} active />
           )}
 
           {canScan && status.failed > 0 && (

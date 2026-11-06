@@ -1,10 +1,13 @@
+import { Suspense, useCallback } from "react";
 import { Navigate, Outlet } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { usePortalAccess } from "@/queries/useMembershipQueries";
 import { useAuthStore } from "@/stores/auth.store";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
+import { FullScreenLoader, PageLoader } from "@/components/ui/full-screen-loader";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { PortalBottomNav, PortalSidebar, PortalTopBar } from "@/components/portal/PortalNav";
 import { Toaster } from "@/components/ui/toaster";
 import { useRouteTitle } from "@/hooks/useRouteTitle";
@@ -20,25 +23,6 @@ function SkipLink() {
   );
 }
 
-function PortalLayoutSkeleton() {
-  return (
-    <div className="gradient-mesh-subtle flex min-h-screen items-center justify-center px-4 py-16">
-      <div className="w-full max-w-md">
-        <Card className="p-8 sm:p-10" aria-busy="true" aria-label="Loading your portal">
-          <Skeleton className="mx-auto h-4 w-32" />
-          <Skeleton className="mx-auto mt-4 h-7 w-56" />
-          <Skeleton className="mx-auto mt-3 h-4 w-72" />
-          <div className="mt-8 space-y-3">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
 // The authenticated app shell - sidebar on desktop, top bar + bottom tabs
 // on mobile. This is a genuine JS branch (isDesktop ? treeA : treeB), so
 // only ONE navigation tree is ever mounted in the DOM at a time - never
@@ -51,6 +35,7 @@ function PortalLayoutSkeleton() {
 // literally doesn't exist in the tree on mobile.
 export default function PortalLayout() {
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
   const isDesktop = useIsDesktop();
   useRouteTitle("portal");
 
@@ -68,12 +53,19 @@ export default function PortalLayout() {
 
   const isPhotographer = user?.role === "PHOTOGRAPHER";
 
+  // Pull-to-refresh on phones: re-run the queries the current page is
+  // already using. No page needs to know about it.
+  const refreshPage = useCallback(
+    () => queryClient.refetchQueries({ type: "active" }),
+    [queryClient]
+  );
+
   if (isPhotographer) {
     return <Navigate to="/photographer" replace />;
   }
 
   if (isLoading) {
-    return <PortalLayoutSkeleton />;
+    return <FullScreenLoader message="Opening your portal" />;
   }
 
   if (isError || !access) {
@@ -111,7 +103,9 @@ export default function PortalLayout() {
           <PortalSidebar />
         </div>
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto focus:outline-none">
-          <Outlet />
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
         </main>
         <Toaster />
       </div>
@@ -122,9 +116,13 @@ export default function PortalLayout() {
     <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#faf9fc_0%,#f6f5fa_100%)]">
       <SkipLink />
       <PortalTopBar />
-      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-24 focus:outline-none">
-        <Outlet />
-      </main>
+      <PullToRefresh onRefresh={refreshPage}>
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-32 focus:outline-none">
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
+        </main>
+      </PullToRefresh>
       <PortalBottomNav />
       <Toaster />
     </div>

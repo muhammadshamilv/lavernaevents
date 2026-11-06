@@ -1,5 +1,7 @@
-import { AlertCircle, CheckCircle2, Clock, Loader2, RotateCcw, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { Spinner } from "@/components/ui/spinner";
 import type { UploadItem } from "./useUploadQueue";
 
 interface Props {
@@ -35,7 +37,7 @@ export default function UploadQueuePanel({ items, onRetry, onRetryAll, onRemove,
               }`}
             >
               {active > 0 ? (
-                <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                <Spinner size="sm" decorative />
               ) : failed > 0 ? (
                 <AlertCircle className="h-4.5 w-4.5" />
               ) : (
@@ -66,19 +68,14 @@ export default function UploadQueuePanel({ items, onRetry, onRetryAll, onRemove,
           </div>
         </div>
 
-        <div
-          role="progressbar"
-          aria-label="Overall upload progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={percent}
-          className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100"
-        >
-          <div
-            className={`h-full rounded-full transition-[width] duration-500 ${failed > 0 && active === 0 ? "bg-amber-400" : "bg-[image:var(--gradient-brand)]"}`}
-            style={{ width: `${Math.max(percent, active > 0 ? 3 : 0)}%` }}
-          />
-        </div>
+        <ProgressBar
+          className="mt-3"
+          label="Overall upload progress"
+          value={percent}
+          tone={failed > 0 && active === 0 ? "warning" : "brand"}
+          minFill={active > 0 ? 3 : 0}
+          active={active > 0}
+        />
       </div>
 
       <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto border-t border-slate-100 bg-slate-50/50">
@@ -87,7 +84,7 @@ export default function UploadQueuePanel({ items, onRetry, onRetryAll, onRemove,
             <div className="flex items-center gap-2.5">
               {item.status === "done" && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />}
               {item.status === "error" && <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />}
-              {item.status === "uploading" && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--brand-pink)]" />}
+              {item.status === "uploading" && <Spinner size="xs" decorative className="text-[var(--brand-pink)]" />}
               {item.status === "queued" && <Clock className="h-4 w-4 shrink-0 text-slate-400" />}
 
               <p className="min-w-0 flex-1 truncate text-sm text-[var(--brand-navy)]">{item.file.name}</p>
@@ -119,15 +116,13 @@ export default function UploadQueuePanel({ items, onRetry, onRetryAll, onRemove,
             </div>
 
             {item.status === "uploading" && (
-              <div
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={item.progress}
-                className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200"
-              >
-                <div className="h-full rounded-full bg-[var(--brand-pink)] transition-[width]" style={{ width: `${item.progress}%` }} />
-              </div>
+              <ProgressBar
+                className="mt-2 bg-slate-200 ring-0"
+                size="xs"
+                label={`Uploading ${item.file.name}`}
+                value={item.progress}
+                fillClassName="bg-[var(--brand-pink)]"
+              />
             )}
 
             {item.status === "error" && item.error && <p className="mt-1.5 break-words pl-[1.625rem] text-xs text-rose-600">{item.error}</p>}

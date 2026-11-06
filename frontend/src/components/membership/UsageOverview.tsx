@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { useMyUsage } from "@/queries/useMembershipQueries";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProgressBar } from "@/components/ui/progress-bar";
 
 function QuotaBar({
   label,
@@ -35,19 +36,13 @@ function QuotaBar({
         </span>
       </div>
       {!isUnlimited && (
-        <div
-          role="progressbar"
-          aria-label={`${label} used`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(percentUsed)}
-          className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-100"
-        >
-          <div
-            className={`h-full rounded-full transition-all duration-700 ${nearlyOut ? "bg-rose-500" : "bg-[image:var(--gradient-brand)]"}`}
-            style={{ width: `${percentUsed}%` }}
-          />
-        </div>
+        <ProgressBar
+          className="mt-2"
+          size="md"
+          label={`${label} used`}
+          value={percentUsed}
+          tone={nearlyOut ? "danger" : "brand"}
+        />
       )}
       {!isUnlimited && !!topup && topup > 0 && (
         <p className="mt-1 text-xs text-slate-400">Includes {topup} extra from top-ups.</p>

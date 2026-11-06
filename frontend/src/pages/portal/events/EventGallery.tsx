@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalActions } from "@/components/ui/modal";
 import { BackLink, PageHeader, StateCard, fieldClass } from "@/components/portal/PortalUI";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProgressBar } from "@/components/ui/progress-bar";
+import { InfiniteScrollTrigger } from "@/components/ui/infinite-scroll";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useEvent } from "@/queries/useEventQueries";
 import {
@@ -48,19 +50,7 @@ function StorageBar({ storage }: { storage: GalleryStorage }) {
         </span>
       </div>
       {limit_bytes ? (
-        <div
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={percent}
-          aria-label="Storage used"
-          className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100"
-        >
-          <div
-            className={cn("h-full rounded-full transition-[width] duration-500", nearFull ? "bg-rose-500" : "bg-[image:var(--gradient-brand)]")}
-            style={{ width: `${percent}%` }}
-          />
-        </div>
+        <ProgressBar className="mt-2" size="md" label="Storage used" value={percent} tone={nearFull ? "danger" : "brand"} />
       ) : null}
     </div>
   );
@@ -286,13 +276,12 @@ export default function EventGallery() {
                   )}
                 />
 
-                {gallery.hasNextPage && (
-                  <div className="mt-6 text-center">
-                    <Button variant="outline" isLoading={gallery.isFetchingNextPage} onClick={() => gallery.fetchNextPage()}>
-                      Load more
-                    </Button>
-                  </div>
-                )}
+                <InfiniteScrollTrigger
+                  hasMore={!!gallery.hasNextPage}
+                  isLoading={gallery.isFetchingNextPage}
+                  onLoadMore={() => gallery.fetchNextPage()}
+                  itemCount={media.length}
+                />
               </>
             )}
           </div>

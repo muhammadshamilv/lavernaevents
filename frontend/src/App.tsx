@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { queryClient } from "./api/queryClient";
 import { setSessionExpiredHandler } from "./api/client";
@@ -7,6 +7,7 @@ import { useCurrentUser, authKeys } from "./queries/useAuthQueries";
 import { authStore, useAuthStore } from "./stores/auth.store";
 import { isNativeApp } from "./lib/platform";
 import { Skeleton } from "./components/ui/skeleton";
+import { FullScreenLoader } from "./components/ui/full-screen-loader";
 import AppErrorBoundary from "./components/common/AppErrorBoundary";
 import { usePublicRouteTitle } from "./hooks/useRouteTitle";
 
@@ -96,7 +97,17 @@ function SessionBootstrap() {
   return null;
 }
 
+// Signed-in areas (and the mobile app) show the logo loader while they open;
+// the public website keeps its page-shaped skeleton.
+const SIGNED_IN_AREA = /^\/(portal|admin|photographer)(\/|$)/;
+
 function AppSkeleton() {
+  const { pathname } = useLocation();
+
+  if (isNativeApp() || SIGNED_IN_AREA.test(pathname)) {
+    return <FullScreenLoader />;
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <div className="flex h-16 items-center justify-between border-b border-slate-100 px-4 sm:px-6 lg:px-8">
