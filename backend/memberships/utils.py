@@ -118,62 +118,39 @@ def check_template_limit(user, template) -> None:
         )
 
 
-def check_invitation_limit(user, count_needed: int = 1) -> None:
-    """Raise LimitExceededError if sending `count_needed` more invitations
-    would exceed the subscription's shared total_invitations pool.
+def invitation_quota_error(subscription, count_needed: int = 1) -> LimitExceededError | None:
+    """The error for sending `count_needed` invitations on this subscription,
+    or None if its shared WhatsApp/Email/SMS pool (plan + topups) allows it.
 
-    Phase 17. The pool is shared across WhatsApp, Email, and SMS - this
-    does not distinguish by channel. Called at send time, once per
-    attempted batch/guest (see invitations app's bulk-send service),
-    which enforces the project's confirmed "hard stop" behavior: callers
-    should check this per guest in a loop and stop sending the moment it
-    raises, reporting the remaining guests as skipped rather than
-    aborting already-successful sends.
+    Shared by the read-only check below and by
+    memberships.services.reserve_send_quota, so both always agree.
     """
 
-    subscription = get_active_subscription(user)
-
-    if subscription is None:
-        raise LimitExceededError(
-            "An active membership plan is required to send invitations.",
-            code="no_active_plan",
-        )
-
     if subscription.plan.total_invitations is None:
-        return
+        return None
 
     remaining = subscription.invitations_remaining()
 
     if remaining is not None and remaining < count_needed:
-        raise LimitExceededError(
+        return LimitExceededError(
             f"Invitation limit reached. Your {subscription.plan.name} plan allows "
             f"{subscription.plan.total_invitations} invitations total, and you have "
             f"{remaining} remaining.",
             code="invitation_limit_exceeded",
         )
 
+    return None
 
-def check_voice_call_limit(user, count_needed: int = 1) -> None:
-    """Raise LimitExceededError if placing `count_needed` more voice calls
-    would exceed the subscription's voice_call_limit pool.
 
-    Separate pool from check_invitation_limit since a voice call costs
-    far more per unit than a text-based send (Phase 21 will call this).
-    """
-
-    subscription = get_active_subscription(user)
-
-    if subscription is None:
-        raise LimitExceededError(
-            "An active membership plan is required to place voice calls.",
-            code="no_active_plan",
-        )
+def voice_quota_error(subscription, count_needed: int = 1) -> LimitExceededError | None:
+    """The error for placing `count_needed` voice calls on this subscription,
+    or None if its voice pool (plan + topups) allows it."""
 
     if subscription.plan.voice_call_limit is None:
-        return
+        return None
 
     if subscription.plan.voice_call_limit == 0:
-        raise LimitExceededError(
+        return LimitExceededError(
             f"Voice call invitations are not available on your {subscription.plan.name} plan.",
             code="voice_call_not_available",
         )
@@ -181,12 +158,58 @@ def check_voice_call_limit(user, count_needed: int = 1) -> None:
     remaining = subscription.voice_calls_remaining()
 
     if remaining is not None and remaining < count_needed:
-        raise LimitExceededError(
+        return LimitExceededError(
             f"Voice call limit reached. Your {subscription.plan.name} plan allows "
             f"{subscription.plan.voice_call_limit} voice calls total, and you have "
             f"{remaining} remaining.",
             code="voice_call_limit_exceeded",
         )
+
+    return None
+
+
+def no_active_plan_error(voice: bool) -> LimitExceededError:
+    return LimitExceededError(
+        "An active membership plan is required to place voice calls."
+        if voice
+        else "An active membership plan is required to send invitations.",
+        code="no_active_plan",
+    )
+
+
+def check_invitation_limit(user, count_needed: int = 1) -> None:
+    """Raise LimitExceededError if sending `count_needed` more invitations
+    would exceed the subscription's shared total_invitations pool.
+
+    Read-only pre-check. The actual send path RESERVES quota atomically with
+    memberships.services.reserve_send_quota instead.
+    """
+
+    subscription = get_active_subscription(user)
+
+    if subscription is None:
+        raise no_active_plan_error(voice=False)
+
+    error = invitation_quota_error(subscription, count_needed)
+
+    if error is not None:
+        raise error
+
+
+def check_voice_call_limit(user, count_needed: int = 1) -> None:
+    """Raise LimitExceededError if placing `count_needed` more voice calls
+    would exceed the subscription's voice_call_limit pool (read-only
+    pre-check; see check_invitation_limit)."""
+
+    subscription = get_active_subscription(user)
+
+    if subscription is None:
+        raise no_active_plan_error(voice=True)
+
+    error = voice_quota_error(subscription, count_needed)
+
+    if error is not None:
+        raise error
 
 
 def check_storage_limit(user, current_usage_mb: float, new_file_size_mb: float) -> None:
@@ -266,55 +289,38 @@ def check_photographer_access(user) -> None:
 # Phase 26: platform-wide channel pools
 # --------------------------------------------------
 
+def platform_pool_error(pool, count_needed: int = 1) -> LimitExceededError | None:
+    """The error when the admin's platform-wide pool for a channel can't
+    cover `count_needed` more sends, else None. A channel with no pool row
+    is unlimited (callers pass pool=None)."""
+
+    if pool is None or pool.remaining() >= count_needed:
+        return None
+
+    return LimitExceededError(
+        f"{pool.get_channel_display()} is temporarily unavailable platform-wide "
+        "due to capacity limits. Please try a different channel, or contact "
+        "support.",
+        code="platform_pool_exhausted",
+    )
+
+
 def check_platform_pool(channel: str, count_needed: int = 1) -> None:
     """Raise LimitExceededError if the admin's platform-wide pool for this
     channel doesn't have `count_needed` units left.
 
     Channel-agnostic and organizer-agnostic by design: this is the ONE
-    supply-side constraint that applies to every send on this channel,
-    regardless of which organizer is sending or how much of their own
-    plan/topup quota they have left. A pool that was never topped up by
-    the admin (no PlatformChannelPool row for this channel) is treated as
-    unlimited, so a fresh deployment never silently blocks sends before
-    the admin has set anything up.
+    supply-side constraint that applies to every send on this channel. A
+    pool that was never topped up by the admin (no PlatformChannelPool row
+    for this channel) is treated as unlimited, so a fresh deployment never
+    silently blocks sends before the admin has set anything up.
 
-    Deliberately checked SEPARATELY from (and in addition to)
-    check_invitation_limit/check_voice_call_limit - callers (see
-    notifications/services.py) should call both: the organizer's own
-    quota first, then this. This keeps the two failure messages distinct
-    so support tickets immediately show whether the cause was the
-    organizer's own plan or a platform-wide capacity issue.
+    Read-only pre-check; the send path reserves pool capacity atomically
+    with memberships.services.reserve_send_quota. Organizer quota is
+    checked first, then this, so support can tell which one ran out.
     """
 
-    pool = PlatformChannelPool.objects.filter(channel=channel).first()
+    error = platform_pool_error(PlatformChannelPool.objects.filter(channel=channel).first(), count_needed)
 
-    if pool is None:
-        return
-
-    if pool.remaining() < count_needed:
-        raise LimitExceededError(
-            f"{pool.get_channel_display()} is temporarily unavailable platform-wide "
-            "due to capacity limits. Please try a different channel, or contact "
-            "support.",
-            code="platform_pool_exhausted",
-        )
-
-
-def spend_platform_pool(channel: str, count: int = 1) -> None:
-    """Increment the platform-wide pool's `used` counter for this channel
-    by `count`.
-
-    Mirrors memberships.services.spend_invitation_quota's pattern:
-    called once per successful send, after the send actually succeeds,
-    never before. Silently does nothing if there's no pool row for this
-    channel (unlimited/not tracked) - check_platform_pool() above is
-    what gates the send itself.
-    """
-
-    from django.db import models as _models
-    from django.utils import timezone as _timezone
-
-    PlatformChannelPool.objects.filter(channel=channel).update(
-        used=_models.F("used") + count,
-        updated_at=_timezone.now(),
-    )
+    if error is not None:
+        raise error

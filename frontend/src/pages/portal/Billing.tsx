@@ -17,25 +17,18 @@ import { IconChip, PageHeader, SectionLabel } from "@/components/portal/PortalUI
 import {
   useMySubscription,
   useMyUsage,
+  usePortalAccess,
   useTopupPacks,
 } from "@/queries/useMembershipQueries";
 import {
   useCreateTopupCheckoutSessionMutation,
   usePaymentHistory,
 } from "@/queries/usePaymentQueries";
-import { formatPrice, formatStorage } from "@/lib/format";
+import { formatDate, formatPrice, formatStorage } from "@/lib/format";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
 import type { TopupPack } from "@/types/membership.types";
 import type { PaymentHistoryItem, PaymentStatus } from "@/types/payment.types";
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 function daysLeft(value: string): number {
   return Math.max(Math.ceil((new Date(value).getTime() - Date.now()) / 86_400_000), 0);
@@ -127,6 +120,9 @@ function LimitTile({ label, value }: { label: string; value: string }) {
 function PlanSummary() {
   const { data: subscription, isLoading: subLoading } = useMySubscription();
   const { data: usage, isLoading: usageLoading } = useMyUsage();
+  // Same cached answer PortalLayout uses; says which plan ran out, and when.
+  const { data: access } = usePortalAccess();
+  const expired = access?.expired_subscription ?? null;
 
   if (subLoading || usageLoading) {
     return <Skeleton className="h-40 w-full rounded-3xl" />;
@@ -138,9 +134,13 @@ function PlanSummary() {
         <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-pink)]/10 text-[var(--brand-pink)]">
           <CreditCard className="h-7 w-7" />
         </span>
-        <p className="mt-4 text-sm text-slate-500">You don't have an active plan.</p>
+        <p className="mt-4 text-sm text-slate-500">
+          {expired
+            ? `Your ${expired.plan_name} plan expired on ${formatDate(expired.expired_at)}. Your events, guests and photos are still saved.`
+            : "You don't have an active plan."}
+        </p>
         <Link to="/pricing" className={buttonVariants({ className: "mt-4" })}>
-          Choose a plan
+          {expired ? "Renew your plan" : "Choose a plan"}
         </Link>
       </Card>
     );

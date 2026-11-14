@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from .models import MembershipPlan
 from .serializers import (
     ChangePlanSerializer,
+    ExpiredSubscriptionSerializer,
     MembershipPlanSerializer,
     MyUsageSerializer,
     SubscribeSerializer,
@@ -18,6 +19,7 @@ from .services import (
     SubscriptionError,
     change_user_plan,
     get_active_subscription,
+    get_expired_subscription,
     get_organizer_template_count,
     subscribe_user_to_plan,
 )
@@ -275,12 +277,22 @@ class PortalAccessView(APIView):
     permission_classes = [IsAuthenticated]
 
     @staticmethod
-    def _reply(message, can_access, next_step):
+    def _reply(message, can_access, next_step, expired=None):
+        # plan_expired / expired_subscription were added later; they let the
+        # pricing page say "your plan expired on <date>" to a returning
+        # customer. next_step stays "select_plan" for them, as before.
         return Response(
             {
                 "success": True,
                 "message": message,
-                "data": {"can_access_portal": can_access, "next_step": next_step},
+                "data": {
+                    "can_access_portal": can_access,
+                    "next_step": next_step,
+                    "plan_expired": expired is not None,
+                    "expired_subscription": (
+                        ExpiredSubscriptionSerializer(expired).data if expired else None
+                    ),
+                },
             },
             status=status.HTTP_200_OK,
         )
@@ -298,7 +310,15 @@ class PortalAccessView(APIView):
             return self._reply("Mobile verification required.", False, "verify_mobile")
 
         if get_active_subscription(user) is None:
-            return self._reply("An active membership plan is required.", False, "select_plan")
+            expired = get_expired_subscription(user)
+
+            return self._reply(
+                "Your membership plan has expired." if expired
+                else "An active membership plan is required.",
+                False,
+                "select_plan",
+                expired,
+            )
 
         return self._reply("Portal access granted.", True, None)
 

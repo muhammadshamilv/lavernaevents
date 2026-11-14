@@ -1,8 +1,10 @@
 # backend/memberships/services.py
+from dataclasses import dataclass
 from datetime import timedelta
 
 from django.db import models, transaction
 from django.db.models import Count
+from django.db.models.functions import Greatest
 from django.utils import timezone
 
 from .models import MembershipPlan, OrganizerTemplateLibrary, Subscription
@@ -72,6 +74,32 @@ def get_active_subscription(user) -> Subscription | None:
     return subscription
 
 
+def get_expired_subscription(user) -> Subscription | None:
+    """The user's most recent subscription, if it ran out (EXPIRED).
+
+    Lets the app say "your <plan> plan expired on <date>" instead of
+    treating a returning customer like someone who never subscribed. Only
+    meaningful when the user has no active subscription; call
+    get_active_subscription() first so an overdue row is already marked
+    EXPIRED. Read-only.
+    """
+
+    if user is None or not getattr(user, "pk", None):
+        return None
+
+    latest = (
+        Subscription.objects.select_related("plan")
+        .filter(user=user)
+        .order_by("-created_at")
+        .first()
+    )
+
+    if latest is not None and latest.status == Subscription.Status.EXPIRED:
+        return latest
+
+    return None
+
+
 def lock_user(user):
     """Row-lock the user for the rest of the surrounding transaction.
 
@@ -106,9 +134,16 @@ def check_can_purchase(user) -> None:
 def _carry_over_topups(old: Subscription | None) -> dict:
     """The UNUSED part of purchased topups moves to the next subscription.
 
+    `old` is the subscription being replaced: the active one on an upgrade
+    or switch, or the most recent EXPIRED one on a renewal (the organizer
+    paid real money for the topup, so it must survive the plan running out).
+
     Plan allowance is spent before topup allowance, so what is left of the
-    topup is min(topup bought, total remaining). An unlimited plan has no
-    topup to carry.
+    topup is min(topup bought, total remaining). On an unlimited plan the
+    topup was never drawn on, so all of it carries.
+
+    Never double-credits: a topup only ever moves from the ONE subscription
+    being replaced to the ONE new row, and the caller holds the user lock.
     """
 
     if old is None:
@@ -119,10 +154,14 @@ def _carry_over_topups(old: Subscription | None) -> dict:
 
     return {
         "invitations_topup": (
-            0 if invitations_left is None else min(old.invitations_topup, invitations_left)
+            old.invitations_topup
+            if invitations_left is None
+            else min(old.invitations_topup, invitations_left)
         ),
         "voice_calls_topup": (
-            0 if voice_left is None else min(old.voice_calls_topup, voice_left)
+            old.voice_calls_topup
+            if voice_left is None
+            else min(old.voice_calls_topup, voice_left)
         ),
     }
 
@@ -150,7 +189,7 @@ def create_active_subscription(
 def activate_plan_for_user(user, plan: MembershipPlan) -> Subscription:
     """Put the user on `plan`: cancel any current plan, start the new one.
 
-    The ONE path used by upgrades (after Stripe payment), free-plan
+    The ONE path used by upgrades (after Cashfree payment), free-plan
     switches and renewals. Atomic and user-locked, so a double webhook or a
     double click can never produce two active subscriptions.
     """
@@ -169,7 +208,11 @@ def activate_plan_for_user(user, plan: MembershipPlan) -> Subscription:
                 updated_at=now,
             )
 
-        return create_active_subscription(user, plan, carry_over_from=current)
+        # Renewing after the plan ran out: carry the unused topups of the
+        # plan that expired.
+        carry_over_from = current if current is not None else get_expired_subscription(user)
+
+        return create_active_subscription(user, plan, carry_over_from=carry_over_from)
 
 
 def subscribe_user_to_plan(user, plan_slug: str) -> Subscription:
@@ -207,7 +250,9 @@ def subscribe_user_to_plan(user, plan_slug: str) -> Subscription:
                 code="already_subscribed",
             )
 
-        return create_active_subscription(user, plan)
+        return create_active_subscription(
+            user, plan, carry_over_from=get_expired_subscription(user)
+        )
 
 
 def change_user_plan(user, new_plan_slug: str) -> tuple[Subscription, str]:
@@ -327,32 +372,115 @@ def remove_template_from_library(organizer, template) -> None:
 
 
 # --------------------------------------------------
-# Invitation quota spending (Phase 17)
+# Send quota: reserve before the provider call, refund on failure
 # --------------------------------------------------
 
-def spend_invitation_quota(user, count: int = 1) -> None:
-    """Increment the active subscription's invitations_used by `count`."""
+VOICE_CHANNEL = "VOICE_CALL"
 
-    subscription = get_active_subscription(user)
 
-    if subscription is None:
-        return
+@dataclass(frozen=True)
+class QuotaReservation:
+    """What reserve_send_quota() took, so release_send_quota() can give
+    exactly that back (even if the plan changed in between)."""
 
-    Subscription.objects.filter(pk=subscription.pk).update(
-        invitations_used=models.F("invitations_used") + count,
-        updated_at=timezone.now(),
+    subscription_id: int
+    counter: str  # "invitations_used" or "voice_calls_used"
+    pool_channel: str | None  # None when the channel has no platform pool
+    count: int
+
+
+def reserve_send_quota(user, channel: str, count: int = 1) -> QuotaReservation:
+    """Check AND take `count` units of send quota, atomically, before the
+    provider is called.
+
+    Takes from the organizer's active subscription (the shared invitation
+    pool, or the voice-call pool for VOICE_CALL) and from the admin's
+    platform pool for that channel. Both rows are locked while checked and
+    incremented, so parallel sends (two tabs, a bulk send and the reminder
+    task at once) can never take more than is left. The lock is only held
+    for this short transaction, not during the provider call.
+
+    Raises memberships.utils.LimitExceededError (organizer quota first, then
+    the platform pool, so the message says which one ran out). Pair every
+    reservation with release_send_quota() if the send then fails.
+    """
+
+    from .topup_models import PlatformChannelPool
+    from .utils import (
+        invitation_quota_error,
+        no_active_plan_error,
+        platform_pool_error,
+        voice_quota_error,
+    )
+
+    is_voice = channel == VOICE_CHANNEL
+    counter = "voice_calls_used" if is_voice else "invitations_used"
+
+    with transaction.atomic():
+        now = timezone.now()
+
+        subscription = (
+            Subscription.objects.select_for_update(of=("self",))
+            .select_related("plan")
+            .filter(user=user, status=Subscription.Status.ACTIVE, expires_at__gt=now)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if subscription is None:
+            raise no_active_plan_error(voice=is_voice)
+
+        error = (
+            voice_quota_error(subscription, count)
+            if is_voice
+            else invitation_quota_error(subscription, count)
+        )
+
+        if error is not None:
+            raise error
+
+        pool = PlatformChannelPool.objects.select_for_update().filter(channel=channel).first()
+
+        error = platform_pool_error(pool, count)
+
+        if error is not None:
+            raise error
+
+        Subscription.objects.filter(pk=subscription.pk).update(
+            **{counter: models.F(counter) + count},
+            updated_at=now,
+        )
+
+        if pool is not None:
+            PlatformChannelPool.objects.filter(pk=pool.pk).update(
+                used=models.F("used") + count,
+                updated_at=now,
+            )
+
+    return QuotaReservation(
+        subscription_id=subscription.pk,
+        counter=counter,
+        pool_channel=channel if pool is not None else None,
+        count=count,
     )
 
 
-def spend_voice_call_quota(user, count: int = 1) -> None:
-    """Increment the active subscription's voice_calls_used by `count`."""
+def release_send_quota(reservation: QuotaReservation) -> None:
+    """Give back a reservation whose send did not happen. Never goes below 0."""
 
-    subscription = get_active_subscription(user)
+    from .topup_models import PlatformChannelPool
 
-    if subscription is None:
-        return
+    now = timezone.now()
+    counter = reservation.counter
 
-    Subscription.objects.filter(pk=subscription.pk).update(
-        voice_calls_used=models.F("voice_calls_used") + count,
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        Subscription.objects.filter(pk=reservation.subscription_id).update(
+            **{counter: Greatest(models.F(counter) - reservation.count, 0)},
+            updated_at=now,
+        )
+
+        if reservation.pool_channel is not None:
+            PlatformChannelPool.objects.filter(channel=reservation.pool_channel).update(
+                used=Greatest(models.F("used") - reservation.count, 0),
+                updated_at=now,
+            )

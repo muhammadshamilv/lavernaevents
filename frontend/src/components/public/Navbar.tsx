@@ -7,20 +7,16 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/stores/auth.store";
 import { useLogoutMutation } from "@/queries/useAuthQueries";
-import { usePortalAccess } from "@/queries/useMembershipQueries";
 import { NAV_LINKS } from "@/lib/siteConfig";
 import { cn } from "@/lib/utils";
 
 // A logged-in user stays on the public site until they choose to enter
 // the portal - "Open portal" is a deliberate click, never an automatic
-// redirect. Where that click goes depends on portal access: not yet
-// subscribed -> /pricing to complete purchase first; fully onboarded ->
-// straight into /portal. usePortalAccess is the same single source of
-// truth PortalLayout's own gate uses, so this never drifts out of sync.
-function usePortalDestination(): string {
-  const { data: access } = usePortalAccess();
-  return access?.can_access_portal ? "/portal" : "/pricing";
-}
+// redirect. It always goes to /portal, the same place the hero button goes.
+// PortalLayout is the single gate that decides what happens next (finish
+// mobile verification, pick a plan, or open the dashboard), so this button
+// never has to guess from half-loaded data.
+const PORTAL_PATH = "/portal";
 
 function useSignOut(onNavigate?: () => void) {
   const logoutMutation = useLogoutMutation();
@@ -40,14 +36,13 @@ function useSignOut(onNavigate?: () => void) {
 
 function AccountMenu() {
   const { user } = useAuthStore();
-  const portalDestination = usePortalDestination();
   const { signOut, isPending } = useSignOut();
 
   const initial = user?.full_name?.trim()?.[0]?.toUpperCase() ?? "?";
 
   return (
     <div className="flex items-center gap-2">
-      <Link to={portalDestination} className={buttonVariants({ variant: "primary", size: "sm" })}>
+      <Link to={PORTAL_PATH} className={buttonVariants({ variant: "primary", size: "sm" })}>
         Open portal
       </Link>
 
@@ -74,7 +69,6 @@ function AccountMenu() {
 
 function MobileAccountMenu({ onNavigate }: { onNavigate: () => void }) {
   const { user } = useAuthStore();
-  const portalDestination = usePortalDestination();
   const { signOut, isPending } = useSignOut(onNavigate);
 
   const initial = user?.full_name?.trim()?.[0]?.toUpperCase() ?? "?";
@@ -89,7 +83,7 @@ function MobileAccountMenu({ onNavigate }: { onNavigate: () => void }) {
       </div>
 
       <Link
-        to={portalDestination}
+        to={PORTAL_PATH}
         onClick={onNavigate}
         className={buttonVariants({ variant: "primary", className: "w-full" })}
       >

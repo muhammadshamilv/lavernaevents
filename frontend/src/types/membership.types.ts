@@ -67,9 +67,18 @@ export interface UsageSummary {
 
 export type PortalNextStep = "verify_mobile" | "select_plan" | null;
 
+/** The plan that most recently ran out (sent when next_step is "select_plan"). */
+export interface ExpiredSubscription {
+  plan_name: string;
+  plan_slug: string;
+  expired_at: string;
+}
+
 export interface PortalAccess {
   can_access_portal: boolean;
   next_step: PortalNextStep;
+  plan_expired: boolean;
+  expired_subscription: ExpiredSubscription | null;
 }
 
 export type PlanChangeType = "upgrade" | "downgrade" | "same";

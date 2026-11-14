@@ -261,10 +261,12 @@ function AppRoutes() {
           <Route path="settings" element={<AccountSettings />} />
         </Route>
 
+        {/* Organizers only: every portal API is organizer-only, so an admin
+            who opens /portal is sent to /admin by ProtectedRoute. */}
         <Route
           path="portal"
           element={
-            <ProtectedRoute allowedRoles={["ORGANIZER", "ADMIN"]}>
+            <ProtectedRoute allowedRoles={["ORGANIZER"]}>
               <PortalLayout />
             </ProtectedRoute>
           }

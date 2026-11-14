@@ -20,14 +20,8 @@ from invitations.services import (
     render_active_template_for_guest,
     render_active_template_image,
 )
-from memberships.services import spend_invitation_quota, spend_voice_call_quota
-from memberships.utils import (
-    LimitExceededError,
-    check_invitation_limit,
-    check_platform_pool,
-    check_voice_call_limit,
-    spend_platform_pool,
-)
+from memberships.services import release_send_quota, reserve_send_quota
+from memberships.utils import LimitExceededError
 
 from .models import NotificationLog
 
@@ -1153,9 +1147,12 @@ def send_active_template_to_guest(
     time. If omitted, the active template's own channel is used (the old
     behavior), so existing callers keep working.
 
-    Quota order: the organizer's own plan/topup quota first, then the
-    platform-wide channel pool, so a failure message always says which of
-    the two ran out.
+    Quota: one unit is RESERVED (checked and taken under a row lock) before
+    the provider is called, and given back if the send fails, so parallel
+    sends can never overspend. Organizer plan/topup quota is checked first,
+    then the platform-wide channel pool, so a failure message always says
+    which of the two ran out. A voice call counts once it is placed, even
+    if the guest does not answer (the provider charges for the attempt).
     """
 
     if event.status in (event.Status.CANCELLED, event.Status.COMPLETED):
@@ -1182,23 +1179,19 @@ def send_active_template_to_guest(
         )
 
     try:
-        if channel == NotificationLog.Channel.VOICE_CALL:
-            check_voice_call_limit(organizer)
-        else:
-            check_invitation_limit(organizer)
-
-        check_platform_pool(channel)
+        reservation = reserve_send_quota(organizer, channel)
 
     except LimitExceededError as error:
         raise InvitationError(error.message, code=error.code)
 
-    invitation = _get_or_create_invitation_for_active(active, guest)
-    message = _build_message_for_channel(invitation, channel, is_reminder)
-
     try:
+        invitation = _get_or_create_invitation_for_active(active, guest)
+        message = _build_message_for_channel(invitation, channel, is_reminder)
         log = CHANNEL_HANDLERS[channel](invitation, message, organizer, is_reminder=is_reminder)
 
     except NotificationError as error:
+        release_send_quota(reservation)
+
         _record_send(
             event, guest, organizer, active.template, channel,
             succeeded=False, is_reminder=is_reminder, failure_reason=error.message,
@@ -1210,12 +1203,11 @@ def send_active_template_to_guest(
 
         raise
 
-    if channel == NotificationLog.Channel.VOICE_CALL:
-        spend_voice_call_quota(organizer)
-    else:
-        spend_invitation_quota(organizer)
-
-    spend_platform_pool(channel)
+    except Exception:
+        # Nothing reached the guest (rendering or an unexpected error):
+        # give the quota back, then let the error surface as before.
+        release_send_quota(reservation)
+        raise
 
     _record_send(
         event, guest, organizer, active.template, channel,

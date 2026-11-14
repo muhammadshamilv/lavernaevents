@@ -42,7 +42,7 @@ const LOG_STATUS_BADGE_CLASS: Record<NotificationStatus, string> = {
   LINK_GENERATED: "badge-gold",
   SENT: "badge-success",
   FAILED: "bg-rose-100 text-rose-700",
-  // Phase 21: a voice call in flight - Twilio has accepted the request
+  // Phase 21: a voice call in flight - Plivo has accepted the request
   // and is dialing, outcome not yet known (see
   // notifications/services.py's apply_voice_call_status_callback).
   CALLING: "bg-sky-100 text-sky-700",
@@ -337,7 +337,7 @@ function NotificationLogsTab({ eventId }: { eventId: number }) {
       );
     }
 
-    // Phase 21: a CALLING row is mid-flight (Twilio is dialing) - nothing
+    // Phase 21: a CALLING row is mid-flight (Plivo is dialing) - nothing
     // for the organizer to do but wait for the status callback to land,
     // so no retry/action button shows until it resolves to SENT or FAILED.
     if (log.status === "CALLING") {

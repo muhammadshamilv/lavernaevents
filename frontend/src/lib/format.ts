@@ -21,6 +21,15 @@ export function formatStorage(mb: number): string {
   return `${mb} MB`;
 }
 
+// A calendar date such as "14 Nov 2026" (plan end dates, billing history).
+export function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 // Up to 2 initials from a name, for an avatar placeholder ("Rohan Kumar" -> "RK").
 export function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

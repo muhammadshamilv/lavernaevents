@@ -62,6 +62,14 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         return obj.voice_calls_remaining()
 
 
+class ExpiredSubscriptionSerializer(serializers.Serializer):
+    """The plan that most recently ran out, shown as "expired on <date>"."""
+
+    plan_name = serializers.CharField(source="plan.name")
+    plan_slug = serializers.CharField(source="plan.slug")
+    expired_at = serializers.DateTimeField(source="expires_at")
+
+
 class SubscribeSerializer(serializers.Serializer):
     """Serializer for validating a subscribe request."""
 

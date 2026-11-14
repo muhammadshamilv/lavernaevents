@@ -57,7 +57,7 @@ const SECTIONS: LegalSection[] = [
     ],
     items: [
       "Cashfree Payments, to process payments.",
-      "Brevo (email), Fast2SMS (SMS) and Twilio (voice calls), to deliver the messages you send.",
+      "Brevo (email), Fast2SMS (SMS) and Plivo (voice calls), to deliver the messages you send.",
       "Supabase (database and file storage), Render (servers) and Cloudflare (website delivery), to host the Service.",
       "Authorities, when the law requires it.",
     ],

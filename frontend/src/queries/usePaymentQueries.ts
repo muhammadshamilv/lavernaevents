@@ -38,7 +38,7 @@ export function usePaymentHistory() {
 }
 
 const POLL_INTERVAL_MS = 2000;
-// 15 tries x 2 s = 30 s. The backend also asks Stripe directly on every
+// 15 tries x 2 s = 30 s. The backend also asks Cashfree directly on every
 // poll, so a slow or missing webhook no longer leaves the page waiting.
 const MAX_ATTEMPTS = 15;
 

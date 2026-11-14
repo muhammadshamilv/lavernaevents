@@ -23,12 +23,13 @@ import {
   useChangePlanMutation,
   useMySubscription,
   usePlans,
+  usePortalAccess,
   useSubscribeMutation,
 } from "@/queries/useMembershipQueries";
 import { useCreateCheckoutSessionMutation } from "@/queries/usePaymentQueries";
 import { CHECKOUT_LOAD_ERROR, startCashfreeCheckout } from "@/lib/cashfree";
 import { useAuthStore } from "@/stores/auth.store";
-import { formatPrice, formatStorage } from "@/lib/format";
+import { formatDate, formatPrice, formatStorage } from "@/lib/format";
 import { countLabel, includedLabel } from "@/lib/planLabels";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
@@ -171,6 +172,9 @@ type PendingConfirm = { plan: MembershipPlan; kind: "switch" | "upgrade" };
 export default function PricingGrid({ hideHeader = false }: { hideHeader?: boolean }) {
   const { data: plans, isLoading, isError } = usePlans();
   const { data: subscription } = useMySubscription();
+  // Only an organizer whose plan ran out gets expired_subscription back.
+  const { data: access } = usePortalAccess();
+  const expired = access?.expired_subscription ?? null;
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -265,6 +269,20 @@ export default function PricingGrid({ hideHeader = false }: { hideHeader?: boole
         {isError && (
           <p className="mt-8 rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-600 sm:mt-10">
             Couldn't load plans right now. Please refresh the page.
+          </p>
+        )}
+
+        {/* A returning customer whose plan ran out (sent here by the portal). */}
+        {expired && !hasActivePlan && (
+          <p
+            role="status"
+            className={cn(
+              "rounded-2xl bg-rose-50 px-4 py-3 text-center text-sm text-rose-600",
+              hideHeader ? "mb-8 sm:mb-10" : "mt-8 sm:mt-10"
+            )}
+          >
+            Your {expired.plan_name} plan expired on {formatDate(expired.expired_at)}. Choose a plan
+            below to renew. Your events, guests and photos are still saved.
           </p>
         )}
 

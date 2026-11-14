@@ -1,9 +1,75 @@
+import logging
 from datetime import timedelta
 
 from celery import shared_task
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
+# A reminder that fails this many times (for the same original invitation)
+# is given up on, so a wrong number or a provider outage can't trigger a
+# paid provider call every 10 minutes forever. Each failure is stored as a
+# FAILED reminder row, so the organizer's report shows what happened.
+MAX_FAILED_REMINDER_ATTEMPTS = 3
+
+
+def _reminder_blocked(guest, original_send) -> str | None:
+    """Why this guest must NOT be reminded now, or None if they may be.
+
+    Called once before taking the guest's row lock (cheap filter) and AGAIN
+    after taking it, because another overlapping run may have reminded the
+    guest in between.
+    """
+
+    from invitations.models import InvitationSend
+
+    reminders = InvitationSend.objects.filter(
+        event=original_send.event_id,
+        guest=guest,
+        is_reminder=True,
+        created_at__gte=original_send.created_at,
+    )
+
+    if reminders.filter(status=InvitationSend.Status.SENT).exists():
+        return "already_reminded"
+
+    if reminders.filter(status=InvitationSend.Status.FAILED).count() >= MAX_FAILED_REMINDER_ATTEMPTS:
+        return "gave_up"
+
+    return None
+
+
+def _failed_reminder_count(guest, original_send) -> int:
+    from invitations.models import InvitationSend
+
+    return InvitationSend.objects.filter(
+        event=original_send.event_id,
+        guest=guest,
+        is_reminder=True,
+        status=InvitationSend.Status.FAILED,
+        created_at__gte=original_send.created_at,
+    ).count()
+
+
+def _record_failed_reminder(guest, original_send, organizer, reason: str) -> None:
+    """Store a failed attempt that stopped BEFORE reaching a provider (no
+    quota left, event closed, ...). Provider failures are already stored by
+    notifications.services.send_active_template_to_guest."""
+
+    from invitations.models import InvitationSend
+
+    InvitationSend.objects.create(
+        event=guest.event,
+        guest=guest,
+        template=original_send.template,
+        channel=original_send.channel,
+        status=InvitationSend.Status.FAILED,
+        is_reminder=True,
+        sent_by=organizer,
+        failure_reason=(reason or "Reminder could not be sent.")[:255],
+    )
 
 
 @shared_task(name="invitations.send_due_reminders")
@@ -85,18 +151,10 @@ def send_due_reminders():
         if now < due_at:
             continue
 
-        # Already (successfully) reminded since the original send - don't
-        # remind again on every Beat tick. A FAILED reminder attempt does
-        # not count, so it is retried on the next tick.
-        already_reminded = InvitationSend.objects.filter(
-            event=guest.event,
-            guest=guest,
-            is_reminder=True,
-            status=InvitationSend.Status.SENT,
-            created_at__gte=original_send.created_at,
-        ).exists()
-
-        if already_reminded:
+        # Already reminded since the original send, or failed too often:
+        # don't try again on every Beat tick. Fewer than
+        # MAX_FAILED_REMINDER_ATTEMPTS failures are retried on the next tick.
+        if _reminder_blocked(guest, original_send) is not None:
             continue
 
         already_queued = PendingWhatsAppReminder.objects.filter(guest=guest).exists()
@@ -123,25 +181,55 @@ def send_due_reminders():
             queued_count += 1
             continue
 
-        try:
-            # Lock the guest row for the send, so two overlapping runs can't
-            # both remind the same guest. A row another run holds is skipped.
-            with transaction.atomic():
-                locked = Guest.objects.select_for_update(skip_locked=True).filter(pk=guest.pk).first()
+        # Lock the guest row for the send, so two overlapping runs can't
+        # both remind the same guest. A row another run holds is skipped.
+        # Everything is re-checked once the lock is held, because another
+        # run may have sent (or the guest replied) since the check above.
+        failed_attempt = False
 
-                if locked is None:
-                    continue
+        with transaction.atomic():
+            locked = (
+                Guest.objects.select_for_update(skip_locked=True)
+                .select_related("event")
+                .filter(pk=guest.pk)
+                .first()
+            )
 
+            if (
+                locked is None
+                or locked.response_status != Guest.ResponseStatus.PENDING
+                or _reminder_blocked(locked, original_send) is not None
+            ):
+                continue
+
+            failures_before = _failed_reminder_count(locked, original_send)
+
+            try:
                 send_reminder_to_guest(
-                    event=guest.event,
+                    event=locked.event,
                     guest=locked,
                     organizer=organizer,
                     channel=original_send.channel,
                 )
-            sent_count += 1
+            except (InvitationError, NotificationError) as error:
+                # Quota exhausted, template misconfigured, provider error...
+                # Always leave exactly one FAILED row per attempt, so the
+                # attempt counts towards MAX_FAILED_REMINDER_ATTEMPTS.
+                if _failed_reminder_count(locked, original_send) == failures_before:
+                    _record_failed_reminder(locked, original_send, organizer, error.message)
 
-        except (InvitationError, NotificationError):
-            # Quota exhausted, template misconfigured, provider error, etc.
+                failed_attempt = True
+                logger.warning(
+                    "Reminder for guest %s failed (%s): attempt %s of %s.",
+                    locked.pk,
+                    getattr(error, "code", "error"),
+                    failures_before + 1,
+                    MAX_FAILED_REMINDER_ATTEMPTS,
+                )
+
+        if failed_attempt:
             skipped_count += 1
+        else:
+            sent_count += 1
 
     return {"sent": sent_count, "queued_whatsapp": queued_count, "skipped": skipped_count}

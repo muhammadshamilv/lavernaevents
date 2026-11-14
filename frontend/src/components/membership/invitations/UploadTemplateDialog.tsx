@@ -68,7 +68,7 @@ export default function UploadTemplateDialog({ open, onClose }: UploadTemplateDi
     onClose();
   };
 
-  // Phase 21: Voice Call templates are read aloud via Twilio's
+  // Phase 21: Voice Call templates are read aloud via Plivo's
   // text-to-speech, so body_text is just as required for them as it is
   // for WhatsApp/SMS - there's no "image-only" voice call the way an
   // Email template can rely purely on its background_image.
